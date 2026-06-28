@@ -11,6 +11,7 @@ import threading
 
 from redis import Redis
 
+from tools.ProgressTools import BurteProgress
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
 from tools.color import console
@@ -80,6 +81,9 @@ def unauthorized_reverseShell(redis_cli, ip, listen_port):
 #线程池执行任务
 def scan_redis_run(hosts, port=6379, password="", ssh_pub_key=None, ip=None, listen_port=8888, threads=500):
     redis_found_hosts.clear()
+    hosts_list = list(hosts)
     passwords = load_lines(password)
-    tasks = ((host, port, passwd, ssh_pub_key, ip, listen_port) for host in hosts for passwd in passwords)
-    run_batch(tasks, scan_redis, threads)
+    tasks_count = len(hosts_list) * len(passwords)
+    tasks = ((host, port, passwd, ssh_pub_key, ip, listen_port) for host in hosts_list for passwd in passwords)
+    with BurteProgress(tasks_count, "Redis弱口令") as progress:
+        run_batch(tasks, scan_redis, threads, on_progress=progress.update)

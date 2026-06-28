@@ -13,6 +13,7 @@ import warnings
 
 import paramiko
 
+from tools.ProgressTools import BurteProgress
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
 from tools.color import console
@@ -77,7 +78,9 @@ def scan_ssh_run_file(hosts, username, password, port=22, threads=500):
     passwords = load_lines(password)
     tasks_count = len(hosts_list) * len(users) * len(passwords)
     tasks = ((ip, port, user, pwd) for ip in hosts_list for user in users for pwd in passwords)
-    run_batch(tasks, ssh_scan, _safe_threads(threads, tasks_count))
+    safe_threads = _safe_threads(threads, tasks_count)
+    with BurteProgress(tasks_count, "SSH弱口令") as progress:
+        run_batch(tasks, ssh_scan, safe_threads, on_progress=progress.update)
 
 
 #指定用户名
@@ -87,4 +90,6 @@ def scan_ssh_run(hosts, username, password, port=22, threads=500):
     passwords = load_lines(password)
     tasks_count = len(hosts_list) * len(passwords)
     tasks = ((ip, port, username, pwd) for ip in hosts_list for pwd in passwords)
-    run_batch(tasks, ssh_scan, _safe_threads(threads, tasks_count))
+    safe_threads = _safe_threads(threads, tasks_count)
+    with BurteProgress(tasks_count, "SSH弱口令") as progress:
+        run_batch(tasks, ssh_scan, safe_threads, on_progress=progress.update)

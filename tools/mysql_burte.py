@@ -11,6 +11,7 @@ import threading
 
 import pymysql
 
+from tools.ProgressTools import BurteProgress
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
 from tools.color import console
@@ -50,15 +51,21 @@ def scan_mysql(ip="127.0.0.1", port=3306, user="root", password="", connect_time
 #线程池执行任务
 def scan_mysql_run_file(hosts, userpath, pwdpath, port, threads):
     mysql_found_hosts.clear()
+    hosts_list = list(hosts)
     users = load_lines(userpath)
     passwords = load_lines(pwdpath)
-    tasks = ((ip, port, user, pwd) for ip in hosts for user in users for pwd in passwords)
-    run_batch(tasks, scan_mysql, threads)
+    tasks_count = len(hosts_list) * len(users) * len(passwords)
+    tasks = ((ip, port, user, pwd) for ip in hosts_list for user in users for pwd in passwords)
+    with BurteProgress(tasks_count, "MySQL弱口令") as progress:
+        run_batch(tasks, scan_mysql, threads, on_progress=progress.update)
 
 
 #指定用户名
 def scan_mysql_run(hosts, username, password, port, threads):
     mysql_found_hosts.clear()
+    hosts_list = list(hosts)
     passwords = load_lines(password)
-    tasks = ((ip, port, username, pwd) for ip in hosts for pwd in passwords)
-    run_batch(tasks, scan_mysql, threads)
+    tasks_count = len(hosts_list) * len(passwords)
+    tasks = ((ip, port, username, pwd) for ip in hosts_list for pwd in passwords)
+    with BurteProgress(tasks_count, "MySQL弱口令") as progress:
+        run_batch(tasks, scan_mysql, threads, on_progress=progress.update)
