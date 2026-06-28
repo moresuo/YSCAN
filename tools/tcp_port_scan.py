@@ -8,6 +8,10 @@
 @脚本说明 :
 """
 import asyncio
+import signal
+import sys
+
+from alive_progress import alive_bar
 
 # 常见端口 → 服务名映射
 PORT_SERVICE = {
@@ -34,7 +38,7 @@ PORT_SERVICE = {
     3986: "MAP-ws", 4899: "Radmin", 5000: "UPnP",
     5009: "Airport", 5051: "ITA-agent", 5060: "SIP",
     5101: "ESIntf", 5190: "AIM", 5357: "WSDAPI",
-    5432: "PostgreSQL", 5631: "pcAnywhere",
+    5432: "PostgreSQL", 5631: "pcAnywhere", 6379: "Redis",
     5666: "Nagios", 5800: "VNC-http", 5900: "VNC",
     6000: "X11", 6001: "X11",
     6646: "IRC-SSL", 7070: "RealServer",
@@ -71,14 +75,14 @@ async def scan_tcp_port(ip, port, timeout=1):
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
         return port
-    except:
+    except (OSError, asyncio.TimeoutError):
         return None
     finally:
         if writer:
             writer.close()
             try:
                 await writer.wait_closed()
-            except:
+            except (OSError, RuntimeError):
                 pass
 
 
@@ -128,9 +132,15 @@ async def scan_tcp_port_async_collect(host, ports, threads, timeout=1, on_progre
 
     worker_count = min(max(threads, 1), queue.qsize() or 1)
     workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
-    await queue.join()
-    for worker_task in workers:
-        worker_task.cancel()
+    try:
+        await queue.join()
+    except asyncio.CancelledError:
+        for w in workers:
+            w.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        raise
+    for w in workers:
+        w.cancel()
     await asyncio.gather(*workers, return_exceptions=True)
     return sorted(open_ports)
 
@@ -172,30 +182,92 @@ async def scan_tcp_port_async_collect_hosts(hosts_ports, threads, timeout=1, on_
 
     worker_count = min(max(threads, 1), queue.qsize() or 1)
     workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
-    await queue.join()
-    for worker_task in workers:
-        worker_task.cancel()
+    try:
+        await queue.join()
+    except asyncio.CancelledError:
+        for w in workers:
+            w.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        raise
+    for w in workers:
+        w.cancel()
     await asyncio.gather(*workers, return_exceptions=True)
     return {host: sorted(ports) for host, ports in open_map.items()}
 
 
+def _install_quiet_sigint():
+    """Windows 下避免大量异步任务收尾时 Ctrl+C 刷 traceback。"""
+    previous_handler = signal.getsignal(signal.SIGINT)
+
+    def quiet_sigint(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, quiet_sigint)
+    return previous_handler
+
+
+def _restore_sigint(previous_handler):
+    try:
+        signal.signal(signal.SIGINT, previous_handler)
+    except (TypeError, ValueError):
+        pass
+
+
 #收集单主机开放端口
 def scan_tcp_port_collect(host, ports, threads, timeout=1, on_progress=None):
-    return asyncio.run(scan_tcp_port_async_collect(host, ports, threads, timeout, on_progress))
+    previous_handler = _install_quiet_sigint()
+    try:
+        return asyncio.run(scan_tcp_port_async_collect(host, ports, threads, timeout, on_progress))
+    finally:
+        _restore_sigint(previous_handler)
 
 
 #收集多主机开放端口，返回 {host: [open_ports]}
 def scan_tcp_port_collect_hosts(hosts, ports, threads, timeout=1, on_open=None, on_progress=None):
     hosts_ports = ((host, port) for host in hosts for port in ports)
-    return asyncio.run(scan_tcp_port_async_collect_hosts(hosts_ports, threads, timeout, on_open, on_progress))
+    previous_handler = _install_quiet_sigint()
+    try:
+        return asyncio.run(scan_tcp_port_async_collect_hosts(hosts_ports, threads, timeout, on_open, on_progress))
+    finally:
+        _restore_sigint(previous_handler)
 
 
 #端口扫描入口
 def scan_tcp_port_run(host, ports, threads):
     from tools.color import console
+    from tools.ip_scan import _ping_alive
+
+    # 先检测存活，不存活直接跳过
+    if not _ping_alive(host):
+        console.print(f"[host]{host}[/host] [fail]✗ 主机不存活，跳过端口扫描[/fail]")
+        return
+
     ports_list = list(ports)
-    console.print(f"[host]{host}[/host] [dim]扫描 {len(ports_list)} 端口...[/dim]")
-    open_ports = scan_tcp_port_collect(host, ports_list, threads)
+    total = len(ports_list)
+    _tracked = [0]
+
+    def on_progress(completed, _total):
+        delta = completed - _tracked[0]
+        if delta > 0:
+            _bar(delta)
+            _tracked[0] = completed
+
+    console.print(f"[host]{host}[/host] [dim]扫描 {total} 端口...[/dim]")
+    with alive_bar(
+        total,
+        title="端口扫描",
+        bar="smooth",
+        spinner="dots_waves2",
+        enrich_print=False,
+        file=sys.__stderr__,
+        receipt=True,
+        receipt_text="端口扫描完成",
+    ) as _bar:
+        open_ports = scan_tcp_port_collect(host, ports_list, threads, on_progress=on_progress)
+        remaining = total - _tracked[0]
+        if remaining > 0:
+            _bar(remaining)
+
     if not open_ports:
         console.print("  [dim]未发现开放端口[/dim]")
     for port in open_ports:

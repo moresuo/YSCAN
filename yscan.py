@@ -191,7 +191,6 @@ try:
             ports = iter_ports(args.ports)
             scan_tcp_port_run(args.host, ports, args.threads)
         else:
-            # 默认行为：扫描 Top 100
             top_ports = get_top_ports(100)
             console.print(Panel.fit(
                 f"[accent]目标[/accent]  [host]{args.host}[/host]\n"
@@ -201,8 +200,15 @@ try:
             ))
             scan_tcp_port_run(args.host, top_ports, args.threads)
         console.print("[header]✓ 端口扫描完成[/header]")
+except KeyboardInterrupt:
+    console.print("\n[warn]⏎ 用户中断，任务已取消[/warn]")
+except Exception as e:
+    console.print(f"\n[fail]✗ 运行异常: {e}[/fail]")
 finally:
     if _output_writer:
-        _output_writer.close()
-        sys.stdout = sys.__stdout__
-        console.print(f"[dim]结果已保存至:[/dim] [url]{args.output}[/url]")
+        try:
+            _output_writer.close()
+            sys.stdout = sys.__stdout__
+            console.print(f"[dim]结果已保存至:[/dim] [url]{args.output}[/url]")
+        except Exception:
+            pass
