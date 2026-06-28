@@ -14,6 +14,7 @@ from pathlib import Path
 import dns.resolver
 
 from tools.SchedulerTools import run_batch
+from tools.color import console
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DIR_PATH = BASE_DIR / "libs" / "subdomain.txt"
@@ -23,7 +24,7 @@ warnings.filterwarnings("ignore")
 thread_local = threading.local()
 
 
-#每个线程复用自己的 DNS Resolver，避免每个子域都重复创建 Resolver
+#每个线程复用自己的 DNS Resolver
 def get_resolver():
     dns_resolver = getattr(thread_local, "resolver", None)
     if dns_resolver is None:
@@ -41,14 +42,21 @@ def scan_subdomain(domain, subdomain):
     try:
         dns_result = get_resolver().resolve(full_domain, "A")
         ips = [record.to_text() for record in dns_result]
-        print(f"[+] {full_domain}存活，IP：{ips}")
+        console.print(f"  [success]●[/success] [host]{full_domain}[/host] [dim]→ {', '.join(ips)}[/dim]")
     except:
         pass
 
 
 #多线程执行
 def scan_subdomain_run(domain, threads):
+    from rich.panel import Panel
     with open(file=DIR_PATH, mode="r", encoding="utf-8") as subdomains:
-        names = (subdomain.strip() for subdomain in subdomains)
-        tasks = ((domain, subdomain) for subdomain in names if subdomain)
-        run_batch(tasks, scan_subdomain, threads)
+        names = [s.strip() for s in subdomains if s.strip()]
+    console.print(Panel.fit(
+        f"[accent]目标域名[/accent]  [host]{domain}[/host]\n"
+        f"[accent]字典条目[/accent]  [count]{len(names)}[/count]",
+        title="[header]子域名爆破[/header]",
+        border_style="dim",
+    ))
+    tasks = ((domain, s) for s in names)
+    run_batch(tasks, scan_subdomain, threads)

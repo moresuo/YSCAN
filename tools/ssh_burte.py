@@ -14,6 +14,7 @@ import paramiko
 
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
+from tools.color import console
 
 warnings.filterwarnings("ignore")
 
@@ -29,9 +30,7 @@ def ssh_scan(host, port=22, username="root", password=""):
             return
     try:
         ssh_client = paramiko.SSHClient()
-        #设置连接策略，自动识别
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
-        #ssh连接
         ssh_client.connect(
             hostname=host,
             port=port,
@@ -44,9 +43,8 @@ def ssh_scan(host, port=22, username="root", password=""):
             auth_timeout=2,
             compress=False
         )
-        #connect成功即可证明凭据有效，避免额外执行命令带来的开销
         if ssh_client.get_transport() and ssh_client.get_transport().is_alive():
-            print(f"[+] {host}:{port} SSH连接成功，存在弱口令：{username}/{password}")
+            console.print(f"    [success]✔ SSH   {host}:{port} → {username}/{password}[/success]")
             with ssh_found_lock:
                 ssh_found_hosts.add(key)
         ssh_client.close()

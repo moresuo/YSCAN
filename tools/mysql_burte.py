@@ -13,6 +13,7 @@ import pymysql
 
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
+from tools.color import console
 
 mysql_found_hosts = set()
 mysql_found_lock = threading.Lock()
@@ -36,7 +37,8 @@ def scan_mysql(ip="127.0.0.1", port=3306, user="root", password="", connect_time
         )
         if conn:
             cursor = conn.cursor()
-            print(f"[+] {ip}:{port}存在弱口令,弱口令:{user}/{password},版本:{cursor.connection.get_server_info()}")
+            ver = cursor.connection.get_server_info()
+            console.print(f"    [success]✔ MySQL {ip}:{port} → {user}/{password}[/success] [dim]({ver})[/dim]")
             with mysql_found_lock:
                 mysql_found_hosts.add(key)
             cursor.close()

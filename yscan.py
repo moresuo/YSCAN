@@ -1,27 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""  
+"""
 @Project : python
 @File : yscan.py
 @Author : moresuo
-@Time : 2026/6/27 15:30  
-@脚本说明 : 
+@Time : 2026/6/27 15:30
+@脚本说明 :
 """
 import argparse
 import sys
+from pathlib import Path
+
+from rich.panel import Panel
+from rich.text import Text
 
 from tools.AddressTools import iter_segments
-from tools.mysql_burte import scan_mysql_run,scan_mysql_run_file
+from tools.mysql_burte import scan_mysql_run, scan_mysql_run_file
 from tools.redis_burte import scan_redis_run
-from tools.ssh_burte import scan_ssh_run,scan_ssh_run_file
+from tools.ssh_burte import scan_ssh_run, scan_ssh_run_file
 from tools.dir_scan import scan_dir_run
 from tools.subdomain_scan import scan_subdomain_run
 from tools.ip_scan import scan_ip_run
 from tools.PortTools import iter_ports
-from tools.tcp_port_scan import scan_tcp_port_run
+from tools.tcp_port_scan import scan_tcp_port_run, get_top_ports
 from tools.scan_run import scan_run
-from tools.color import Colors
-from pathlib import Path
+from tools.color import console, Colors
+from tools.OutputTools import TeeWriter
 
 BASE_DIR = Path(__file__).resolve().parent
 DIR_PATH = BASE_DIR / "libs" / "passwords.txt"
@@ -31,125 +35,174 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-banner="""
- █████ █████  █████████    █████████    █████████   ██████   █████
-▒▒███ ▒▒███  ███▒▒▒▒▒███  ███▒▒▒▒▒███  ███▒▒▒▒▒███ ▒▒██████ ▒▒███ 
- ▒▒███ ███  ▒███    ▒▒▒  ███     ▒▒▒  ▒███    ▒███  ▒███▒███ ▒███ 
-  ▒▒█████   ▒▒█████████ ▒███          ▒███████████  ▒███▒▒███▒███ 
-   ▒▒███     ▒▒▒▒▒▒▒▒███▒███          ▒███▒▒▒▒▒███  ▒███ ▒▒██████ 
-    ▒███     ███    ▒███▒▒███     ███ ▒███    ▒███  ▒███  ▒▒█████ 
-    █████   ▒▒█████████  ▒▒█████████  █████   █████ █████  ▒▒█████
-   ▒▒▒▒▒     ▒▒▒▒▒▒▒▒▒    ▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒   ▒▒▒▒▒ ▒▒▒▒▒    ▒▒▒▒▒                                                                                                                                                                                     
-"""
-print(f"{Colors.RED_BRIGHT}{Colors.BOLD}{banner}{Colors.RESET}")
-#创建解析器对象
-parser=argparse.ArgumentParser(description="YSCAN")
-#创建子命令解析器
-subprocess=parser.add_subparsers(dest="subparser_name",help="请选择需要使用的功能")
+# ── Banner ────────────────────────────────────────────────────
 
-#分别创建子命令，以及需要的参数
-#MySQl相关参数
-mysql_subparser=subprocess.add_parser("mysql",help="MySQL相关漏扫")
-mysql_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="MySQL主机地址/网段/范围")
-mysql_subparser.add_argument("-P","--port",dest="port",type=int,help="MySQL端口",default=3306)
-mysql_subparser.add_argument("-U","--username_file",dest="username_file",type=str,help="MySQL用户名文件路径")
-mysql_subparser.add_argument("-u","--username",dest="username",type=str,help="MySQL用户名",default="root")
-mysql_subparser.add_argument("-p","--password",dest="password",type=str,help="MySQL密码本路径",default=DIR_PATH)
-mysql_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
-#Redis相关参数
-redis_subparser=subprocess.add_parser("redis",help="Redis相关漏扫")
-redis_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="Redis主机地址/网段/范围")
-redis_subparser.add_argument("-P","--port",dest="port",type=int,help="Redis端口",default=6379)
-redis_subparser.add_argument("-p","--password",dest="password",type=str,help="redis密码本路径",default=DIR_PATH)
-redis_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
-#公私钥未授权输入公钥
-redis_subparser.add_argument("-pub","--ssh_pub_key",dest="ssh_pub_key",type=argparse.FileType(mode="r",encoding="utf-8"),help="ssh公钥")
-#反弹shell输入IP,端口
-redis_subparser.add_argument("-I","--ip",dest="ip",type=str,help="反弹shellIP")
-redis_subparser.add_argument("-L","--listen_port",dest="listen_port",type=int,help="反弹shell端口",default=8888)
+BANNER_LINES = [
+    r" █████ █████  █████████    █████████    █████████   ██████   █████",
+    r"▒▒███ ▒▒███  ███▒▒▒▒▒███  ███▒▒▒▒▒███  ███▒▒▒▒▒███ ▒▒██████ ▒▒███ ",
+    r" ▒▒███ ███  ▒███    ▒▒▒  ███     ▒▒▒  ▒███    ▒███  ▒███▒███ ▒███ ",
+    r"  ▒▒█████   ▒▒█████████ ▒███          ▒███████████  ▒███▒▒███▒███ ",
+    r"   ▒▒███     ▒▒▒▒▒▒▒▒███▒███          ▒███▒▒▒▒▒███  ▒███ ▒▒██████ ",
+    r"    ▒███     ███    ▒███▒▒███     ███ ▒███    ▒███  ▒███  ▒▒█████ ",
+    r"    █████   ▒▒█████████  ▒▒█████████  █████   █████ █████  ▒▒█████",
+    r"   ▒▒▒▒▒     ▒▒▒▒▒▒▒▒▒    ▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒   ▒▒▒▒▒ ▒▒▒▒▒    ▒▒▒▒▒",
+]
 
-#ssh相关参数
-ssh_subparser=subprocess.add_parser("ssh",help="ssh相关漏扫")
-ssh_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="ssh主机地址/网段/范围")
-ssh_subparser.add_argument("-P","--port",dest="port",type=int,help="ssh端口",default=22)
-ssh_subparser.add_argument("-U","--username_file",dest="username_file",type=str,help="ssh用户名文件路径")
-ssh_subparser.add_argument("-u","--username",dest="username",type=str,help="ssh用户名",default="root")
-ssh_subparser.add_argument("-p","--password",dest="password",type=str,help="ssh密码本路径",default=DIR_PATH)
-ssh_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
+def _banner():
+    text = Text()
+    for i, line in enumerate(BANNER_LINES):
+        style = "banner" if i < 2 else "dim"
+        text.append(line + "\n", style=style)
+    return Panel(text, border_style="dim")
 
-#目录扫描参数
-dir_subparser=subprocess.add_parser("dir",help="目录扫描")
-dir_subparser.add_argument("-t","--url",dest="url",type=str,required=True,help="待扫描的url")
-dir_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
 
-#子域名扫描参数
-subdomain_subparser=subprocess.add_parser("subdomain",help="子域名扫描")
-subdomain_subparser.add_argument("-t","--url",dest="url",type=str,required=True,help="待扫描的url")
-subdomain_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
+# ── CLI ───────────────────────────────────────────────────────
 
-#ip扫描参数
-ip_subparser=subprocess.add_parser("ip",help="内网ip扫描")
-ip_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="ip地址/网段/范围")
-ip_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
+parser = argparse.ArgumentParser(description="YSCAN")
+subprocess = parser.add_subparsers(dest="subparser_name", help="请选择需要使用的功能")
 
-#一键扫描参数
-scan_subparser=subprocess.add_parser("scan",help="一键式快速扫描")
-scan_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="主机地址/网段/范围")
-scan_subparser.add_argument("-u","--username",dest="username",type=str,help="SSH/MySQL用户名",default="root")
-scan_subparser.add_argument("-p","--password",dest="password",type=str,help="密码本路径",default=DIR_PATH)
-scan_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
-scan_subparser.add_argument("--top",dest="top",type=int,default=100,help="一键扫描Top端口数量")
+parent_parser = argparse.ArgumentParser(add_help=False)
+parent_parser.add_argument("-o", "--output", dest="output", type=str, default=None,
+                           help="输出文件路径（.txt 或 .html）")
 
-#端口扫描参数
-port_subparser=subprocess.add_parser("port",help="端口扫描")
-port_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="ip地址")
-port_subparser.add_argument("-p","--ports",dest="ports",type=str,help="端口范围",default="1-65535")
-port_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
+# MySQL
+mysql_subparser = subprocess.add_parser("mysql", parents=[parent_parser], help="MySQL弱口令检测")
+mysql_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="MySQL主机地址/网段/范围")
+mysql_subparser.add_argument("-P", "--port", dest="port", type=int, help="MySQL端口", default=3306)
+mysql_subparser.add_argument("-U", "--username_file", dest="username_file", type=str, help="MySQL用户名文件路径")
+mysql_subparser.add_argument("-u", "--username", dest="username", type=str, help="MySQL用户名", default="root")
+mysql_subparser.add_argument("-p", "--password", dest="password", type=str, help="MySQL密码本路径", default=DIR_PATH)
+mysql_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
 
-#解析命令行参数
-args=parser.parse_args()
+# Redis
+redis_subparser = subprocess.add_parser("redis", parents=[parent_parser], help="Redis弱口令检测")
+redis_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="Redis主机地址/网段/范围")
+redis_subparser.add_argument("-P", "--port", dest="port", type=int, help="Redis端口", default=6379)
+redis_subparser.add_argument("-p", "--password", dest="password", type=str, help="redis密码本路径", default=DIR_PATH)
+redis_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+redis_subparser.add_argument("-pub", "--ssh_pub_key", dest="ssh_pub_key",
+                             type=argparse.FileType(mode="r", encoding="utf-8"), help="ssh公钥")
+redis_subparser.add_argument("-I", "--ip", dest="ip", type=str, help="反弹shell IP")
+redis_subparser.add_argument("-L", "--listen_port", dest="listen_port", type=int, help="反弹shell端口", default=8888)
+
+# SSH
+ssh_subparser = subprocess.add_parser("ssh", parents=[parent_parser], help="SSH弱口令检测")
+ssh_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="ssh主机地址/网段/范围")
+ssh_subparser.add_argument("-P", "--port", dest="port", type=int, help="ssh端口", default=22)
+ssh_subparser.add_argument("-U", "--username_file", dest="username_file", type=str, help="ssh用户名文件路径")
+ssh_subparser.add_argument("-u", "--username", dest="username", type=str, help="ssh用户名", default="root")
+ssh_subparser.add_argument("-p", "--password", dest="password", type=str, help="ssh密码本路径", default=DIR_PATH)
+ssh_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+
+# 目录扫描
+dir_subparser = subprocess.add_parser("dir", parents=[parent_parser], help="Web目录扫描")
+dir_subparser.add_argument("-t", "--url", dest="url", type=str, required=True, help="待扫描的url")
+dir_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+dir_subparser.add_argument("--timeout", dest="timeout", type=float, default=3.0, help="单次请求超时秒数（默认3）")
+
+# 子域名
+subdomain_subparser = subprocess.add_parser("subdomain", parents=[parent_parser], help="子域名爆破")
+subdomain_subparser.add_argument("-t", "--url", dest="url", type=str, required=True, help="待扫描的域名")
+subdomain_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+
+# IP 存活
+ip_subparser = subprocess.add_parser("ip", parents=[parent_parser], help="内网IP存活探测")
+ip_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="ip地址/网段/范围")
+ip_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+
+# 一键扫描
+scan_subparser = subprocess.add_parser("scan", parents=[parent_parser], help="一键式快速扫描")
+scan_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="主机地址/网段/范围")
+scan_subparser.add_argument("-u", "--username", dest="username", type=str, help="SSH/MySQL用户名", default="root")
+scan_subparser.add_argument("-p", "--password", dest="password", type=str, help="密码本路径", default=DIR_PATH)
+scan_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+scan_subparser.add_argument("--top", dest="top", type=int, default=100, help="Top端口数量")
+
+# 端口扫描
+port_subparser = subprocess.add_parser("port", parents=[parent_parser], help="端口扫描")
+port_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="ip地址")
+port_subparser.add_argument("-p", "--ports", dest="ports", type=str, default=None, help="端口范围（如 1-1024、80,443、8080）")
+port_subparser.add_argument("--top", dest="top", type=int, default=None, help="扫描Top常见端口数量，等价于常用端口快速扫描")
+port_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+
+# ── 执行 ───────────────────────────────────────────────────────
+
+args = parser.parse_args()
+
+_output_writer = None
+if args.output:
+    _output_writer = TeeWriter(args.output)
+    sys.stdout = _output_writer
+
+console.print(_banner())
+
 if not args.subparser_name:
     parser.print_help()
     exit()
-#根据子命令执行相应操作
-if args.subparser_name=="scan":
-    hosts=iter_segments(args.host)
-    scan_run(hosts,args.threads,args.password,args.username,args.top)
-    print("[*] 扫描完毕")
-elif args.subparser_name=="mysql":
-    hosts=iter_segments(args.host)
-    if args.username_file:
-        scan_mysql_run_file(hosts,args.username_file, args.password, args.port,args.threads)
-    else:
-        scan_mysql_run(hosts, args.username, args.password, args.port,args.threads)
-    print("[*] 漏扫完毕")
-elif args.subparser_name=="redis":
-    hosts=iter_segments(args.host)
-    #获取公钥文件内容
-    ssh_pub_key=args.ssh_pub_key.read() if args.ssh_pub_key else None
-    scan_redis_run(hosts,args.port,args.password,ssh_pub_key,args.ip,args.listen_port,args.threads)
-    print("[*] 漏扫完毕")
-elif args.subparser_name=="ssh":
-    hosts=iter_segments(args.host)
-    if args.username_file:
-        scan_ssh_run_file(hosts,args.username_file,args.password,args.port,args.threads)
-    else:
-        scan_ssh_run(hosts,args.username,args.password,args.port,args.threads)
-    print("[*] 漏扫完毕")
-elif args.subparser_name=="dir":
-    args.url = args.url.strip()
-    if not args.url.endswith("/"):
-        args.url+="/"
-    scan_dir_run(args.url,args.threads)
-    print("[*] 扫描完毕")
-elif args.subparser_name=="subdomain":
-    scan_subdomain_run(args.url,args.threads)
-    print("[*] 扫描完毕")
-elif args.subparser_name=="ip":
-    hosts=iter_segments(args.host)
-    scan_ip_run(hosts,args.threads)
-    print("[*] 扫描完毕")
-elif args.subparser_name=="port":
-    ports=iter_ports(args.ports)
-    scan_tcp_port_run(args.host,ports,args.threads)
-    print("[*] 扫描完毕")
+
+try:
+    if args.subparser_name == "scan":
+        hosts = iter_segments(args.host)
+        scan_run(hosts, args.threads, args.password, args.username, args.top)
+        console.print("[header]✓ 一键扫描完成[/header]")
+    elif args.subparser_name == "mysql":
+        hosts = iter_segments(args.host)
+        if args.username_file:
+            scan_mysql_run_file(hosts, args.username_file, args.password, args.port, args.threads)
+        else:
+            scan_mysql_run(hosts, args.username, args.password, args.port, args.threads)
+        console.print("[header]✓ 漏扫完毕[/header]")
+    elif args.subparser_name == "redis":
+        hosts = iter_segments(args.host)
+        ssh_pub_key = args.ssh_pub_key.read() if args.ssh_pub_key else None
+        scan_redis_run(hosts, args.port, args.password, ssh_pub_key, args.ip, args.listen_port, args.threads)
+        console.print("[header]✓ 漏扫完毕[/header]")
+    elif args.subparser_name == "ssh":
+        hosts = iter_segments(args.host)
+        if args.username_file:
+            scan_ssh_run_file(hosts, args.username_file, args.password, args.port, args.threads)
+        else:
+            scan_ssh_run(hosts, args.username, args.password, args.port, args.threads)
+        console.print("[header]✓ 漏扫完毕[/header]")
+    elif args.subparser_name == "dir":
+        args.url = args.url.strip()
+        if not args.url.endswith("/"):
+            args.url += "/"
+        scan_dir_run(args.url, args.threads, timeout=args.timeout)
+        console.print("[header]✓ 目录扫描完成[/header]")
+    elif args.subparser_name == "subdomain":
+        scan_subdomain_run(args.url, args.threads)
+        console.print("[header]✓ 子域名扫描完成[/header]")
+    elif args.subparser_name == "ip":
+        hosts = iter_segments(args.host)
+        scan_ip_run(hosts, args.threads)
+        console.print("[header]✓ IP探测完成[/header]")
+    elif args.subparser_name == "port":
+        if args.top:
+            top_ports = get_top_ports(args.top)
+            console.print(Panel.fit(
+                f"[accent]目标[/accent]  [host]{args.host}[/host]\n"
+                f"[accent]端口[/accent]  [count]Top {len(top_ports)}[/count]",
+                title="[header]端口扫描[/header]",
+                border_style="dim",
+            ))
+            scan_tcp_port_run(args.host, top_ports, args.threads)
+        elif args.ports:
+            ports = iter_ports(args.ports)
+            scan_tcp_port_run(args.host, ports, args.threads)
+        else:
+            # 默认行为：扫描 Top 100
+            top_ports = get_top_ports(100)
+            console.print(Panel.fit(
+                f"[accent]目标[/accent]  [host]{args.host}[/host]\n"
+                f"[accent]端口[/accent]  [count]Top {len(top_ports)}[/count]",
+                title="[header]端口扫描[/header]",
+                border_style="dim",
+            ))
+            scan_tcp_port_run(args.host, top_ports, args.threads)
+        console.print("[header]✓ 端口扫描完成[/header]")
+finally:
+    if _output_writer:
+        _output_writer.close()
+        sys.stdout = sys.__stdout__
+        console.print(f"[dim]结果已保存至:[/dim] [url]{args.output}[/url]")

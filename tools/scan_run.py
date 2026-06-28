@@ -7,73 +7,111 @@
 @Time : 2026/6/28
 @脚本说明 : 一键式快速扫描
 """
+import sys
 
+from alive_progress import alive_bar
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.table import Table
+
+from tools.color import console
 from tools.mysql_burte import scan_mysql_run
 from tools.redis_burte import scan_redis_run
 from tools.ssh_burte import scan_ssh_run
-from tools.tcp_port_scan import get_top_ports, scan_tcp_port_collect_hosts
+from tools.tcp_port_scan import get_top_ports, scan_tcp_port_collect_hosts, PORT_SERVICE
 
-SERVICE_MAP = {
-    21: "ftp",
-    22: "ssh",
-    23: "telnet",
-    25: "smtp",
-    53: "dns",
-    80: "http",
-    110: "pop3",
-    135: "msrpc",
-    139: "netbios",
-    143: "imap",
-    443: "https",
-    445: "smb",
-    1433: "mssql",
-    3306: "mysql",
-    3389: "rdp",
-    5432: "postgresql",
-    6379: "redis",
-    8000: "http-alt",
-    8080: "http-proxy",
-    8443: "https-alt",
-}
-
-
-#一键式快速扫描：Top端口 + 常见服务弱口令，不做目录和子域名爆破
 def scan_run(hosts, threads=500, password="", username="root", top=100):
     top_ports = get_top_ports(top)
-
-    print(f"[*] 一键扫描启动，Top端口数量：{len(top_ports)}")
-    print("[*] 不执行目录扫描和子域名爆破")
-
-    #先把所有主机的Top端口一次性并行扫描，避免逐主机串行
     hosts_list = list(hosts)
-    open_map = scan_tcp_port_collect_hosts(hosts_list, top_ports, threads)
-
     host_count = len(hosts_list)
-    open_count = 0
+    total_tasks = host_count * len(top_ports)
 
-    for host in hosts_list:
-        open_ports = open_map.get(host, [])
-        print(f"\n[*] 扫描主机：{host}")
-        if not open_ports:
-            print(f"[-] {host} 未发现Top端口开放")
+    # ── 启动面板 ──
+    console.print(Panel.fit(
+        f"[accent]主机数[/accent]    [count]{host_count}[/count]\n"
+        f"[accent]端口数[/accent]    [count]{len(top_ports)}[/count] (Top)\n"
+        f"[accent]总任务[/accent]    [count]{total_tasks:,}[/count]",
+        title="[header]YSCAN 一键扫描[/header]",
+        subtitle="[dim]不执行目录扫描和子域名爆破[/dim]",
+        border_style="dim",
+    ))
+
+    # ── 端口扫描 ──
+    announced = {}
+    _tracked = [0]
+
+    def on_open(host, port):
+        if host not in announced:
+            announced[host] = []
+            console.print(f"\n[host]▸ {host}[/host]")
+        announced[host].append(port)
+        svc = PORT_SERVICE.get(port, "?")
+        console.print(f"  [port]{port:>5}/tcp[/port]  [service]{svc}[/service]")
+
+    def on_progress(completed, _total):
+        delta = completed - _tracked[0]
+        if delta > 0:
+            _bar(delta)
+            _tracked[0] = completed
+
+    with alive_bar(
+        total_tasks,
+        title="端口扫描",
+        bar="smooth",
+        spinner="dots_waves2",
+        enrich_print=False,
+        file=sys.__stderr__,
+        receipt=True,
+        receipt_text="端口扫描完成",
+    ) as _bar:
+        open_map = scan_tcp_port_collect_hosts(
+            hosts_list, top_ports, threads,
+            on_open=on_open, on_progress=on_progress,
+        )
+        remaining = total_tasks - _tracked[0]
+        if remaining > 0:
+            _bar(remaining)
+
+    # ── 空存活提示 ──
+    if not announced:
+        console.print()
+        console.print(Panel.fit(
+            f"[warn]未发现任何存活主机[/warn]\n"
+            f"[dim]扫描主机 {host_count} 台，存活 0 台[/dim]",
+            border_style="warn",
+        ))
+        return
+
+    # ── 弱口令检测 ──
+    console.print()
+    console.print(Rule("[header]弱口令检测[/header]", style="dim"))
+    total_open = 0
+
+    for alive_host in sorted(announced):
+        open_ports = open_map.get(alive_host, [])
+        total_open += len(open_ports)
+
+        if not (set(open_ports) & {22, 3306, 6379}):
             continue
 
-        open_count += len(open_ports)
-        print(f"[+] {host} 开放端口：")
-        for port in open_ports:
-            service = SERVICE_MAP.get(port, "unknown")
-            print(f"    {port}/tcp {service}")
+        console.print(f"\n[host]{alive_host}[/host]")
 
         if 22 in open_ports:
-            print(f"[*] {host}:22 触发SSH弱口令检测")
-            scan_ssh_run([host], username, password, 22, threads)
+            console.print("  [info]→ SSH 弱口令检测[/info]")
+            scan_ssh_run([alive_host], username, password, 22, threads)
         if 3306 in open_ports:
-            print(f"[*] {host}:3306 触发MySQL弱口令检测")
-            scan_mysql_run([host], username, password, 3306, threads)
+            console.print("  [info]→ MySQL 弱口令检测[/info]")
+            scan_mysql_run([alive_host], username, password, 3306, threads)
         if 6379 in open_ports:
-            print(f"[*] {host}:6379 触发Redis弱口令检测")
-            scan_redis_run([host], 6379, password, None, None, 8888, threads)
+            console.print("  [info]→ Redis 弱口令检测[/info]")
+            scan_redis_run([alive_host], 6379, password, None, None, 8888, threads)
 
-    print("\n[*] 一键扫描完成")
-    print(f"[*] 扫描主机数：{host_count}")
-    print(f"[*] 开放端口数：{open_count}")
+    # ── 汇总表格 ──
+    console.print()
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column(style="dim")
+    table.add_column(style="accent", justify="right")
+    table.add_row("扫描主机", str(host_count))
+    table.add_row("存活主机", f"[success]{len(announced)}[/success]")
+    table.add_row("开放端口", f"[highlight]{total_open}[/highlight]")
+    console.print(Panel(table, title="[header]扫描汇总[/header]", border_style="dim"))

