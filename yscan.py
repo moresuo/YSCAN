@@ -19,6 +19,7 @@ from tools.subdomain_scan import scan_subdomain_run
 from tools.ip_scan import scan_ip_run
 from tools.PortTools import iter_ports
 from tools.tcp_port_scan import scan_tcp_port_run
+from tools.scan_run import scan_run
 from tools.color import Colors
 from pathlib import Path
 
@@ -91,6 +92,14 @@ ip_subparser=subprocess.add_parser("ip",help="内网ip扫描")
 ip_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="ip地址/网段/范围")
 ip_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
 
+#一键扫描参数
+scan_subparser=subprocess.add_parser("scan",help="一键式快速扫描")
+scan_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="主机地址/网段/范围")
+scan_subparser.add_argument("-u","--username",dest="username",type=str,help="SSH/MySQL用户名",default="root")
+scan_subparser.add_argument("-p","--password",dest="password",type=str,help="密码本路径",default=DIR_PATH)
+scan_subparser.add_argument("-T","--threads", dest="threads", type=int, default=500)
+scan_subparser.add_argument("--top",dest="top",type=int,default=100,help="一键扫描Top端口数量")
+
 #端口扫描参数
 port_subparser=subprocess.add_parser("port",help="端口扫描")
 port_subparser.add_argument("-H","--host",dest="host",type=str,required=True,help="ip地址")
@@ -103,7 +112,11 @@ if not args.subparser_name:
     parser.print_help()
     exit()
 #根据子命令执行相应操作
-if args.subparser_name=="mysql":
+if args.subparser_name=="scan":
+    hosts=iter_segments(args.host)
+    scan_run(hosts,args.threads,args.password,args.username,args.top)
+    print("[*] 扫描完毕")
+elif args.subparser_name=="mysql":
     hosts=iter_segments(args.host)
     if args.username_file:
         scan_mysql_run_file(hosts,args.username_file, args.password, args.port,args.threads)
