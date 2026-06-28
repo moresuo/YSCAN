@@ -1,24 +1,33 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""  
+"""
 @Project : python
 @File : ssh_burte.py
 @Author : moresuo
-@Time : 2026/6/27 10:11  
+@Time : 2026/6/27 10:11
 @脚本说明 : ssh爆破
 """
-import ipaddress
+import threading
+import warnings
 
 import paramiko
-import concurrent.futures
-import warnings
+
+from tools.SchedulerTools import run_batch
+from tools.WordlistTools import load_lines
 
 warnings.filterwarnings("ignore")
 
+ssh_found_hosts = set()
+ssh_found_lock = threading.Lock()
+
+
 #ssh连接
-def ssh_scan(host,port=22,username="root",password=""):
+def ssh_scan(host, port=22, username="root", password=""):
+    with ssh_found_lock:
+        if host in ssh_found_hosts:
+            return
     try:
-        ssh_client=paramiko.SSHClient()
+        ssh_client = paramiko.SSHClient()
         #设置连接策略，自动识别
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
         #ssh连接
@@ -30,33 +39,32 @@ def ssh_scan(host,port=22,username="root",password=""):
             timeout=2,
             look_for_keys=False,
             allow_agent=False,
-            banner_timeout=30,
-            auth_timeout=1,
-            compress=True
+            banner_timeout=10,
+            auth_timeout=2,
+            compress=False
         )
-        #判断是否连接成功
-        if ssh_client.get_transport().is_alive():
-            stdin,stdout,stderr=ssh_client.exec_command("echo moresuo")
-            if "moresuo" in stdout.read().decode("utf-8"):
-                print(f"[+] {host}:{port} SSH连接成功，存在弱口令：{username}/{password}")
-            ssh_client.close()
+        #connect成功即可证明凭据有效，避免额外执行命令带来的开销
+        if ssh_client.get_transport() and ssh_client.get_transport().is_alive():
+            print(f"[+] {host}:{port} SSH连接成功，存在弱口令：{username}/{password}")
+            with ssh_found_lock:
+                ssh_found_hosts.add(host)
+        ssh_client.close()
     except:
         pass
 
-#线程池工作，读取用户名文件
-def scan_ssh_run_file(hosts,username,password,port=22,threads=500):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        for ip in hosts:
-            with open(file=username,mode="r",encoding="utf-8") as users:
-                for user in users:
-                    with open(file=password,mode="r",encoding="utf-8") as passwords:
-                        for pwd in passwords:
-                            executor.submit(ssh_scan,ip,port,user.strip(),pwd.strip())
-#指定用户名
-def scan_ssh_run(hosts,username,password,port=22,threads=500):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        for ip in hosts:
-            with open(file=password,mode="r",encoding="utf-8") as passwords:
-                for pwd in passwords:
-                    executor.submit(ssh_scan,ip,port,username,pwd.strip())
 
+#线程池工作，读取用户名文件
+def scan_ssh_run_file(hosts, username, password, port=22, threads=500):
+    ssh_found_hosts.clear()
+    users = load_lines(username)
+    passwords = load_lines(password)
+    tasks = ((ip, port, user, pwd) for ip in hosts for user in users for pwd in passwords)
+    run_batch(tasks, ssh_scan, threads)
+
+
+#指定用户名
+def scan_ssh_run(hosts, username, password, port=22, threads=500):
+    ssh_found_hosts.clear()
+    passwords = load_lines(password)
+    tasks = ((ip, port, username, pwd) for ip in hosts for pwd in passwords)
+    run_batch(tasks, ssh_scan, threads)

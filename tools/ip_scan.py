@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""  
+"""
 @Project : python
 @File : ip_scan.py
 @Author : moresuo
-@Time : 2026/6/27 11:11  
+@Time : 2026/6/27 11:11
 @脚本说明 : 内网ip探测
 """
-import concurrent.futures
 import subprocess
+
+from tools.SchedulerTools import run_batch
 
 
 #内网使用ping检测存活
@@ -27,12 +28,8 @@ def scan_ip(ip):
     except:
         pass
 
+
 #多线程扫描
-def scan_ip_run(hosts,threads):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        for ip in hosts:
-            executor.submit(scan_ip, ip)
-
-
-
-
+def scan_ip_run(hosts, threads):
+    tasks = ((ip,) for ip in hosts)
+    run_batch(tasks, scan_ip, threads)
