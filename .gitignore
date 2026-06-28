@@ -1,3 +1,7 @@
 .venv
 .idea
 CLAUDE.md
+.CLAUDE.md
+__pycache__/
+*/__pycache__/
+*.pyc
