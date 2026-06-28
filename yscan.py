@@ -10,14 +10,14 @@
 import argparse
 import sys
 
-from tools.AddressTools import get_segments
+from tools.AddressTools import iter_segments
 from tools.mysql_burte import scan_mysql_run,scan_mysql_run_file
 from tools.redis_burte import scan_redis_run
 from tools.ssh_burte import scan_ssh_run,scan_ssh_run_file
 from tools.dir_scan import scan_dir_run
 from tools.subdomain_scan import scan_subdomain_run
 from tools.ip_scan import scan_ip_run
-from tools.PortTools import get_ports
+from tools.PortTools import iter_ports
 from tools.tcp_port_scan import scan_tcp_port_run
 from tools.color import Colors
 from pathlib import Path
@@ -104,20 +104,20 @@ if not args.subparser_name:
     exit()
 #根据子命令执行相应操作
 if args.subparser_name=="mysql":
-    hosts=get_segments(args.host)
+    hosts=iter_segments(args.host)
     if args.username_file:
         scan_mysql_run_file(hosts,args.username_file, args.password, args.port,args.threads)
     else:
         scan_mysql_run(hosts, args.username, args.password, args.port,args.threads)
     print("[*] 漏扫完毕")
 elif args.subparser_name=="redis":
-    hosts=get_segments(args.host)
+    hosts=iter_segments(args.host)
     #获取公钥文件内容
     ssh_pub_key=args.ssh_pub_key.read() if args.ssh_pub_key else None
     scan_redis_run(hosts,args.port,args.password,ssh_pub_key,args.ip,args.listen_port,args.threads)
     print("[*] 漏扫完毕")
 elif args.subparser_name=="ssh":
-    hosts=get_segments(args.host)
+    hosts=iter_segments(args.host)
     if args.username_file:
         scan_ssh_run_file(hosts,args.username_file,args.password,args.port,args.threads)
     else:
@@ -133,10 +133,10 @@ elif args.subparser_name=="subdomain":
     scan_subdomain_run(args.url,args.threads)
     print("[*] 扫描完毕")
 elif args.subparser_name=="ip":
-    hosts=get_segments(args.host)
+    hosts=iter_segments(args.host)
     scan_ip_run(hosts,args.threads)
     print("[*] 扫描完毕")
 elif args.subparser_name=="port":
-    ports=get_ports(args.ports)
+    ports=iter_ports(args.ports)
     scan_tcp_port_run(args.host,ports,args.threads)
     print("[*] 扫描完毕")
