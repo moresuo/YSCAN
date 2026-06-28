@@ -23,8 +23,9 @@ ssh_found_lock = threading.Lock()
 
 #ssh连接
 def ssh_scan(host, port=22, username="root", password=""):
+    key = (host, port)
     with ssh_found_lock:
-        if host in ssh_found_hosts:
+        if key in ssh_found_hosts:
             return
     try:
         ssh_client = paramiko.SSHClient()
@@ -47,7 +48,7 @@ def ssh_scan(host, port=22, username="root", password=""):
         if ssh_client.get_transport() and ssh_client.get_transport().is_alive():
             print(f"[+] {host}:{port} SSH连接成功，存在弱口令：{username}/{password}")
             with ssh_found_lock:
-                ssh_found_hosts.add(host)
+                ssh_found_hosts.add(key)
         ssh_client.close()
     except:
         pass

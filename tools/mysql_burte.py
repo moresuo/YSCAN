@@ -20,8 +20,9 @@ mysql_found_lock = threading.Lock()
 
 #连接MySQL
 def scan_mysql(ip="127.0.0.1", port=3306, user="root", password="", connect_timeout=5):
+    key = (ip, port)
     with mysql_found_lock:
-        if ip in mysql_found_hosts:
+        if key in mysql_found_hosts:
             return
     try:
         conn = pymysql.connect(
@@ -37,7 +38,7 @@ def scan_mysql(ip="127.0.0.1", port=3306, user="root", password="", connect_time
             cursor = conn.cursor()
             print(f"[+] {ip}:{port}存在弱口令,弱口令:{user}/{password},版本:{cursor.connection.get_server_info()}")
             with mysql_found_lock:
-                mysql_found_hosts.add(ip)
+                mysql_found_hosts.add(key)
             cursor.close()
         conn.close()
     except:

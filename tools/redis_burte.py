@@ -20,8 +20,9 @@ redis_found_lock = threading.Lock()
 
 #redis爆破
 def scan_redis(host="127.0.0.1", port=6379, password="", ssh_pub_key=None, ip=None, listen_port=8888):
+    key = (host, port)
     with redis_found_lock:
-        if host in redis_found_hosts:
+        if key in redis_found_hosts:
             return
     try:
         redis_cli = Redis(
@@ -34,7 +35,7 @@ def scan_redis(host="127.0.0.1", port=6379, password="", ssh_pub_key=None, ip=No
         )
         if redis_cli.ping():
             with redis_found_lock:
-                redis_found_hosts.add(host)
+                redis_found_hosts.add(key)
             redis_info = redis_cli.info()
             print("===================================================================")
             print(f"[+] {host} Redis连接成功,存在弱口令:{password}")
