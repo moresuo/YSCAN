@@ -11,6 +11,7 @@ import threading
 
 from redis import Redis
 
+from tools.AliveTools import filter_alive_hosts
 from tools.ProgressTools import BurteProgress
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
@@ -81,7 +82,10 @@ def unauthorized_reverseShell(redis_cli, ip, listen_port):
 #线程池执行任务
 def scan_redis_run(hosts, port=6379, password="", ssh_pub_key=None, ip=None, listen_port=8888, threads=500):
     redis_found_hosts.clear()
-    hosts_list = list(hosts)
+    hosts_list = filter_alive_hosts(hosts, port, threads, service_name="Redis")
+    if not hosts_list:
+        console.print("  [warn]未发现 Redis 存活目标，跳过弱口令检测[/warn]")
+        return
     passwords = load_lines(password)
     tasks_count = len(hosts_list) * len(passwords)
     tasks = ((host, port, passwd, ssh_pub_key, ip, listen_port) for host in hosts_list for passwd in passwords)

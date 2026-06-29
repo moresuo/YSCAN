@@ -11,6 +11,7 @@ import threading
 
 import pymysql
 
+from tools.AliveTools import filter_alive_hosts
 from tools.ProgressTools import BurteProgress
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
@@ -51,7 +52,10 @@ def scan_mysql(ip="127.0.0.1", port=3306, user="root", password="", connect_time
 #线程池执行任务
 def scan_mysql_run_file(hosts, userpath, pwdpath, port, threads):
     mysql_found_hosts.clear()
-    hosts_list = list(hosts)
+    hosts_list = filter_alive_hosts(hosts, port, threads, service_name="MySQL")
+    if not hosts_list:
+        console.print("  [warn]未发现 MySQL 存活目标，跳过弱口令检测[/warn]")
+        return
     users = load_lines(userpath)
     passwords = load_lines(pwdpath)
     tasks_count = len(hosts_list) * len(users) * len(passwords)
@@ -63,7 +67,10 @@ def scan_mysql_run_file(hosts, userpath, pwdpath, port, threads):
 #指定用户名
 def scan_mysql_run(hosts, username, password, port, threads):
     mysql_found_hosts.clear()
-    hosts_list = list(hosts)
+    hosts_list = filter_alive_hosts(hosts, port, threads, service_name="MySQL")
+    if not hosts_list:
+        console.print("  [warn]未发现 MySQL 存活目标，跳过弱口令检测[/warn]")
+        return
     passwords = load_lines(password)
     tasks_count = len(hosts_list) * len(passwords)
     tasks = ((ip, port, username, pwd) for ip in hosts_list for pwd in passwords)

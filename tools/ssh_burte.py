@@ -13,6 +13,7 @@ import warnings
 
 import paramiko
 
+from tools.AliveTools import filter_alive_hosts
 from tools.ProgressTools import BurteProgress
 from tools.SchedulerTools import run_batch
 from tools.WordlistTools import load_lines
@@ -73,7 +74,10 @@ def _safe_threads(threads, tasks_count):
 #线程池工作，读取用户名文件
 def scan_ssh_run_file(hosts, username, password, port=22, threads=500):
     ssh_found_hosts.clear()
-    hosts_list = list(hosts)
+    hosts_list = filter_alive_hosts(hosts, port, threads, service_name="SSH")
+    if not hosts_list:
+        console.print("  [warn]未发现 SSH 存活目标，跳过弱口令检测[/warn]")
+        return
     users = load_lines(username)
     passwords = load_lines(password)
     tasks_count = len(hosts_list) * len(users) * len(passwords)
@@ -86,7 +90,10 @@ def scan_ssh_run_file(hosts, username, password, port=22, threads=500):
 #指定用户名
 def scan_ssh_run(hosts, username, password, port=22, threads=500):
     ssh_found_hosts.clear()
-    hosts_list = list(hosts)
+    hosts_list = filter_alive_hosts(hosts, port, threads, service_name="SSH")
+    if not hosts_list:
+        console.print("  [warn]未发现 SSH 存活目标，跳过弱口令检测[/warn]")
+        return
     passwords = load_lines(password)
     tasks_count = len(hosts_list) * len(passwords)
     tasks = ((ip, port, username, pwd) for ip in hosts_list for pwd in passwords)
