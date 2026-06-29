@@ -370,7 +370,8 @@ YSCAN/
 │   ├── redis_burte.py    # Redis 弱口令 + 未授权利用（公私钥/cron）
 │   ├── dir_scan.py       # Web 目录爆破（requests + Session 复用）
 │   ├── subdomain_scan.py # DNS 子域名枚举（dnspython）
-│   ├── ip_scan.py        # ICMP 存活探测（跨平台）
+│   ├── ip_scan.py        # ARP 存活探测（scapy L2，禁 ICMP 仍可探测）
+│   ├── arp_attack.py     # ARP 欺骗攻击（伪装网关，随机 MAC 洪泛）
 │   ├── AddressTools.py   # CIDR/网段/IP范围 解析器
 │   ├── PortTools.py      # 端口表达式解析器
 │   ├── WordlistTools.py  # 字典去重加载器

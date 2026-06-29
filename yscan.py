@@ -21,6 +21,7 @@ from tools.ssh_burte import scan_ssh_run, scan_ssh_run_file
 from tools.dir_scan import scan_dir_run
 from tools.subdomain_scan import scan_subdomain_run
 from tools.ip_scan import scan_ip_run
+from tools.arp_attack import arp_attack_run
 from tools.PortTools import iter_ports
 from tools.tcp_port_scan import scan_tcp_port_run, get_top_ports
 from tools.scan_run import scan_run
@@ -108,6 +109,7 @@ subdomain_subparser.add_argument("-T", "--threads", dest="threads", type=int, de
 # IP 存活
 ip_subparser = subprocess.add_parser("ip", parents=[parent_parser], help="内网IP存活探测")
 ip_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="ip地址/网段/范围")
+ip_subparser.add_argument("-I", "--iface", dest="iface", type=str, default=None, help="指定发包网卡名称/描述（默认按目标网段自动选择）")
 ip_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
 
 # 一键扫描
@@ -117,6 +119,14 @@ scan_subparser.add_argument("-u", "--username", dest="username", type=str, help=
 scan_subparser.add_argument("-p", "--password", dest="password", type=str, help="密码本路径", default=DIR_PATH)
 scan_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
 scan_subparser.add_argument("--top", dest="top", type=int, default=100, help="Top端口数量")
+
+# ARP 欺骗攻击
+arp_subparser = subprocess.add_parser("arp", parents=[parent_parser], help="ARP欺骗攻击（伪装网关）")
+arp_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="靶机IP地址")
+arp_subparser.add_argument("-g", "--gateway", dest="gateway", type=str, default=None, help="伪装的网关IP（默认自动推断同网段.1）")
+arp_subparser.add_argument("-I", "--iface", dest="iface", type=str, default=None, help="发包网卡名称/描述（默认按靶机网段自动选择）")
+arp_subparser.add_argument("-n", "--num", dest="num", type=int, default=10000, help="发送ARP响应包数量（默认10000）")
+arp_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=200)
 
 # 端口扫描
 port_subparser = subprocess.add_parser("port", parents=[parent_parser], help="端口扫描")
@@ -175,7 +185,7 @@ try:
         console.print("[header]✓ 子域名扫描完成[/header]")
     elif args.subparser_name == "ip":
         hosts = iter_segments(args.host)
-        scan_ip_run(hosts, args.threads)
+        scan_ip_run(hosts, args.threads, args.iface)
         console.print("[header]✓ IP探测完成[/header]")
     elif args.subparser_name == "port":
         if args.top:
@@ -200,6 +210,9 @@ try:
             ))
             scan_tcp_port_run(args.host, top_ports, args.threads)
         console.print("[header]✓ 端口扫描完成[/header]")
+    elif args.subparser_name == "arp":
+        arp_attack_run(args.host, args.gateway, args.num, args.iface, args.threads)
+        console.print("[header]✓ ARP攻击完成[/header]")
 except KeyboardInterrupt:
     console.print("\n[warn]⏎ 用户中断，任务已取消[/warn]")
 except Exception as e:
