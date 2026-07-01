@@ -22,6 +22,8 @@ from tools.dir_scan import scan_dir_run
 from tools.subdomain_scan import scan_subdomain_run
 from tools.ip_scan import scan_ip_run
 from tools.arp_attack import arp_attack_run
+from tools.dns_resolve import scan_dns_run
+from tools.http_probe import scan_http_run
 from tools.PortTools import iter_ports
 from tools.tcp_port_scan import scan_tcp_port_run, get_top_ports
 from tools.scan_run import scan_run
@@ -128,9 +130,23 @@ arp_subparser.add_argument("-I", "--iface", dest="iface", type=str, default=None
 arp_subparser.add_argument("-n", "--num", dest="num", type=int, default=10000, help="发送ARP响应包数量（默认10000）")
 arp_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=200)
 
+# 域名解析（不继承 parent_parser，-o 语义为保存解析出的 IP，区别于全局报告）
+dns_subparser = subprocess.add_parser("dns", help="域名解析为IP")
+dns_subparser.add_argument("-u", "--url", dest="url", type=str, default=None, help="单个域名")
+dns_subparser.add_argument("-t", "--file", dest="domain_file", type=str, default=None, help="域名文件路径（一行一个域名）")
+dns_subparser.add_argument("-o", "--output", dest="ip_file", type=str, default=None, help="解析出的IP保存文件路径")
+dns_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
+
+# 外网 HTTP 存活探测（不继承 parent_parser，-o 语义为导出存活地址）
+http_subparser = subprocess.add_parser("http", help="外网HTTP存活探测")
+http_subparser.add_argument("-H", "--host", dest="host", type=str, default=None, help="单个地址（域名/IP:port/URL）")
+http_subparser.add_argument("-t", "--file", dest="host_file", type=str, default=None, help="地址文件路径（一行一个）")
+http_subparser.add_argument("-o", "--output", dest="alive_file", type=str, default=None, help="存活地址导出文件路径")
+http_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
+
 # 端口扫描
 port_subparser = subprocess.add_parser("port", parents=[parent_parser], help="端口扫描")
-port_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="ip地址")
+port_subparser.add_argument("-H", "--host", dest="host", type=str, required=True, help="ip地址/域名")
 port_subparser.add_argument("-p", "--ports", dest="ports", type=str, default=None, help="端口范围（如 1-1024、80,443、8080）")
 port_subparser.add_argument("--top", dest="top", type=int, default=None, help="扫描Top常见端口数量，等价于常用端口快速扫描")
 port_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
@@ -140,7 +156,7 @@ port_subparser.add_argument("-T", "--threads", dest="threads", type=int, default
 args = parser.parse_args()
 
 _output_writer = None
-if args.output:
+if getattr(args, "output", None):
     _output_writer = TeeWriter(args.output)
     sys.stdout = _output_writer
 
@@ -188,31 +204,77 @@ try:
         scan_ip_run(hosts, args.threads, args.iface)
         console.print("[header]✓ IP探测完成[/header]")
     elif args.subparser_name == "port":
+        import ipaddress
+        from tools.dns_resolve import resolve_domain
+
+        # 端口确定：--top 优先，其次 -p，默认 Top 100
         if args.top:
-            top_ports = get_top_ports(args.top)
-            console.print(Panel.fit(
-                f"[accent]目标[/accent]  [host]{args.host}[/host]\n"
-                f"[accent]端口[/accent]  [count]Top {len(top_ports)}[/count]",
-                title="[header]端口扫描[/header]",
-                border_style="dim",
-            ))
-            scan_tcp_port_run(args.host, top_ports, args.threads)
+            ports = get_top_ports(args.top)
         elif args.ports:
-            ports = iter_ports(args.ports)
-            scan_tcp_port_run(args.host, ports, args.threads)
+            ports = list(iter_ports(args.ports))
         else:
-            top_ports = get_top_ports(100)
+            ports = get_top_ports(100)
+
+        # 目标解析：IP 直接用；域名解析为 IP（可能多个，全部扫描）
+        try:
+            ipaddress.ip_address(args.host)
+            targets = [args.host]
+            check_alive = True
+        except ValueError:
+            ips = resolve_domain(args.host)
+            if not ips:
+                console.print(f"[fail]✗ 域名 [host]{args.host}[/host] 解析失败，跳过端口扫描[/fail]")
+                targets = []
+                check_alive = True
+            else:
+                console.print(f"[info]→ [host]{args.host}[/host] 解析为 [highlight]{', '.join(ips)}[/highlight][/info]")
+                targets = ips
+                # 外网域名常禁 ICMP，存活预检会误杀，跳过
+                check_alive = False
+
+        for target in targets:
             console.print(Panel.fit(
-                f"[accent]目标[/accent]  [host]{args.host}[/host]\n"
-                f"[accent]端口[/accent]  [count]Top {len(top_ports)}[/count]",
+                f"[accent]目标[/accent]  [host]{target}[/host]\n"
+                f"[accent]端口[/accent]  [count]{len(ports)}[/count]",
                 title="[header]端口扫描[/header]",
                 border_style="dim",
             ))
-            scan_tcp_port_run(args.host, top_ports, args.threads)
+            scan_tcp_port_run(target, ports, args.threads, check_alive=check_alive)
         console.print("[header]✓ 端口扫描完成[/header]")
     elif args.subparser_name == "arp":
         arp_attack_run(args.host, args.gateway, args.num, args.iface, args.threads)
         console.print("[header]✓ ARP攻击完成[/header]")
+    elif args.subparser_name == "dns":
+        # -u 单域名 与 -T 域名文件 可同时使用，合并去重
+        domains = []
+        if args.domain_file:
+            from tools.WordlistTools import load_lines
+            domains.extend(load_lines(args.domain_file))
+        if args.url:
+            domains.append(args.url)
+        # 去重保持顺序
+        seen = set()
+        domains = [d for d in domains if not (d in seen or seen.add(d))]
+        if not domains:
+            console.print("[warn]⚠ 请用 -u 指定域名或 -T 指定域名文件[/warn]")
+        else:
+            scan_dns_run(domains, threads=args.threads, ip_file=args.ip_file)
+            console.print("[header]✓ 域名解析完成[/header]")
+    elif args.subparser_name == "http":
+        # -H 单地址 与 -t 地址文件 可同时使用，合并去重
+        targets = []
+        if args.host_file:
+            from tools.WordlistTools import load_lines
+            targets.extend(load_lines(args.host_file))
+        if args.host:
+            targets.append(args.host)
+        seen = set()
+        targets = [t for t in targets if not (t in seen or seen.add(t))]
+        if not targets:
+            console.print("[warn]⚠ 请用 -H 指定地址或 -t 指定地址文件[/warn]")
+        else:
+            scan_http_run(targets, threads=args.threads, output_file=args.alive_file)
+            console.print("[header]✓ HTTP探测完成[/header]")
 except KeyboardInterrupt:
     console.print("\n[warn]⏎ 用户中断，任务已取消[/warn]")
 except Exception as e:

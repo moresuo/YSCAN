@@ -10,20 +10,23 @@
 
 内网渗透最烦什么？**工具散、界面丑、扫完没记录**。
 
-YSCAN 把 **8 项核心能力** 集成到一个命令里：
+YSCAN 把 **11 项核心能力** 集成到一个命令里：
 
 | 能力 | 命令 | 一句话 |
 |------|------|--------|
-| 🔌 端口扫描 | `port` | 异步 TCP Connect，Top100 端口 1 秒出结果 |
 | 🎯 一键扫描 | `scan` | 端口→弱口令全自动，发现 SSH/MySQL/Redis 立即爆破 |
+| 🔌 端口扫描 | `port` | 异步 TCP Connect，支持 IP/域名，Top100 端口 1 秒出结果 |
+| 📡 内网存活探测 | `ip` | ARP 二层探测，主机禁 ICMP 仍可发现，自动选网卡 |
+| 🌐 外网存活探测 | `http` | httpx 式 HTTP 探测，响应 200 判活，批量地址文件 |
+| 🔗 域名解析 | `dns` | 域名→IP，支持单域名/域名文件，解析结果导出 |
+| ⚡ ARP 欺骗攻击 | `arp` | 伪装网关洪泛 ARP 响应，随机 MAC 污染靶机缓存 |
 | 🔑 SSH 爆破 | `ssh` | Paramiko 驱动，500 线程并发 |
 | 🗄️ MySQL 爆破 | `mysql` | 爆出版本号，方便后续利用 |
 | 🔴 Redis 爆破 | `redis` | 自动检测写入条件 + 公私钥注入 + cron 反弹 |
 | 🌐 目录扫描 | `dir` | 9645 条路径字典，状态码分色，响应大小一目了然 |
 | 🌍 子域名爆破 | `subdomain` | 10000 条字典，DNS A 记录解析 |
-| 📡 IP 存活探测 | `ip` | ICMP ping，Windows/Linux/macOS 全平台通用 |
 
-**所有命令支持 `-o` 输出 HTML/TXT 报告。**
+**大部分命令支持 `-o` 输出 HTML/TXT 报告；`dns`/`http` 的 `-o` 用于导出解析 IP / 存活地址。**
 
 ---
 
@@ -93,8 +96,9 @@ pip install -i https://mirrors.huaweicloud.com/repository/pypi/simple -r require
 | `paramiko` | ≥3 | SSH 连接与弱口令检测 |
 | `PyMySQL` | ≥1 | MySQL 连接与弱口令检测 |
 | `redis` | ≥5 | Redis 连接与弱口令检测 |
-| `requests` | ≥2.28 | HTTP 目录扫描 |
-| `dnspython` | ≥2.3 | DNS 子域名枚举 |
+| `requests` | ≥2.28 | HTTP 目录扫描 / 外网存活探测 |
+| `dnspython` | ≥2.3 | DNS 子域名枚举 / 域名解析 |
+| `scapy` | ≥2.5 | ARP 存活探测 / ARP 欺骗攻击（需 Npcap） |
 
 > **最低 Python 版本要求：3.9+**
 
@@ -132,9 +136,14 @@ python yscan.py scan -H 192.168.1.0/24 -o result.txt
 
 ### 2. 端口扫描 `port` — 比 nmap 轻，比 telnet 快
 
+支持 **IP 或域名**输入。域名会自动解析为 IP（多 IP 全扫），外网域名跳过 ICMP 预检（外网常禁 ICMP 但端口开放）。
+
 ```bash
 # 默认 Top100 端口（不需要任何参数）
 python yscan.py port -H 192.168.1.1
+
+# 外网域名扫描（自动解析 IP，多 IP 全扫）
+python yscan.py port -H www.baidu.com -p 80,443,8080
 
 # 指定 Top N
 python yscan.py port -H 192.168.1.1 --top 50
@@ -147,7 +156,7 @@ python yscan.py port -H 192.168.1.1 -p 22,80,443,3306,6379,8080
 python yscan.py port -H 192.168.1.0/24 -p 22,80,443 -o ports.html
 ```
 
-> **参数全览**：`-H` IP地址（必填） · `--top` Top端口数 · `-p` 端口范围/列表 · `-T` 线程数 · `-o` 输出文件
+> **参数全览**：`-H` IP地址/域名（必填） · `--top` Top端口数 · `-p` 端口范围/列表 · `-T` 线程数 · `-o` 输出文件
 
 ---
 
@@ -254,7 +263,9 @@ python yscan.py subdomain -t target.com -o subs.html
 
 ---
 
-### 8. IP 存活探测 `ip`
+### 8. 内网 IP 存活探测 `ip` — ARP 二层探测
+
+基于 **scapy L2 ARP** 探测，主机禁用 ICMP 仍可发现存活。按目标网段**自动匹配本机同网段网卡**，无需手动指定。
 
 ```bash
 # 单 IP 或网段
@@ -267,11 +278,85 @@ python yscan.py ip -H 192.168.1.1-192.168.1.254
 # 调高并发加速
 python yscan.py ip -H 10.0.0.0/16 -T 1000
 
+# 手动指定网卡（自动识别失败时，传网卡名称或描述）
+python yscan.py ip -H 192.168.1.0/24 -I "VMware Virtual Ethernet Adapter for VMnet8"
+
 # 输出结果
 python yscan.py ip -H 192.168.1.0/24 -o alive_hosts.txt
 ```
 
-> **参数全览**：`-H` IP/网段/范围（必填） · `-T` 线程数 · `-o` 输出文件
+> **参数全览**：`-H` IP/网段/范围（必填） · `-I` 指定网卡（默认自动） · `-T` 线程数 · `-o` 输出文件
+>
+> ⚠️ ARP 不可跨路由，仅同网段有效；Windows 需 Npcap 且通常需管理员权限发包。
+
+---
+
+### 9. 外网 HTTP 存活探测 `http` — httpx 式批量探测
+
+对地址列表逐个发 HTTP GET，**响应 200 视为存活**。地址自动规整化，支持 `http(s)://host`、`IP:port`、纯域名等混合格式。
+
+```bash
+# 单地址探测
+python yscan.py http -H www.baidu.com
+
+# 批量探测地址文件（一行一个，fofa/子域收集结果可直接喂入）
+python yscan.py http -t fofa.txt
+
+# 探测 + 导出存活地址
+python yscan.py http -t fofa.txt -o alive.txt
+
+# 调高并发加速
+python yscan.py http -t hosts.txt -T 200 -o alive.txt
+```
+
+> **参数全览**：`-H` 单地址 · `-t` 地址文件 · `-o` 存活地址导出 · `-T` 线程数
+>
+> 💡 `-H` 与 `-t` 可同时使用，合并去重。响应非 200（3xx 跳转后看最终码、4xx/5xx）均判为不存活。
+
+---
+
+### 10. 域名解析 `dns` — 域名 → IP
+
+dnspython 多线程解析 A 记录，支持单个域名或域名文件，解析结果逐行打印并可导出 IP。
+
+```bash
+# 单域名
+python yscan.py dns -u www.baidu.com
+
+# 域名文件（一行一个）
+python yscan.py dns -t domains.txt
+
+# 解析 + 导出 IP 列表
+python yscan.py dns -t domains.txt -o ips.txt
+
+# 调高并发
+python yscan.py dns -t domains.txt -T 200 -o ips.txt
+```
+
+> **参数全览**：`-u` 单域名 · `-t` 域名文件 · `-o` IP 导出文件 · `-T` 线程数
+>
+> 💡 仅打印解析成功的域名（`domain → ip`），失败的静默跳过；`-o` 导出去重后的 IP 列表。
+
+---
+
+### 11. ARP 欺骗攻击 `arp` — 伪装网关断网
+
+向靶机洪泛 ARP 响应（is-at），`psrc` 伪装成网关 IP、`hwsrc` 每包随机 MAC，污染靶机 ARP 缓存致其断网。
+
+```bash
+# 默认发送 10000 个 ARP 响应包
+python yscan.py arp -H 192.168.88.188 -g 192.168.88.2
+
+# 自定义发包数量
+python yscan.py arp -H 192.168.88.188 -g 192.168.88.2 -n 5000
+
+# 手动指定网卡（默认按靶机网段自动选择）
+python yscan.py arp -H 192.168.88.188 -g 192.168.88.2 -I "VMware Virtual Ethernet Adapter for VMnet8"
+```
+
+> **参数全览**：`-H` 靶机IP（必填） · `-g` 伪装网关IP（默认推断 .1） · `-I` 网卡 · `-n` 发包数（默认 10000） · `-T` 线程数
+>
+> ⚠️ 仅限授权测试。VMware NAT 网关通常是 `.2`（`.1` 是宿主机），建议显式 `-g` 指定真实网关才能有效中毒；发包会实打实污染靶机 ARP 缓存致断网，误伤同网段其他主机请谨慎。
 
 ---
 
@@ -296,14 +381,18 @@ python yscan.py ssh -H 10.0.0.0/24 -U /path/to/users.txt -p libs/passwords.txt
 
 ### 结果保存
 
-所有 8 个子命令都支持 `-o` 参数：
+大部分子命令支持 `-o` 参数，分两类语义：
 
 ```bash
-# .html → 暗色 GitHub 风格 HTML 报告，成功/失败/警告自动着色
+# 1. 扫描报告（scan/port/ssh/mysql/redis/dir/subdomain/ip/arp）
+#    .html → 暗色 GitHub 风格 HTML 报告，成功/失败/警告自动着色
 python yscan.py scan -H 192.168.1.0/24 -o report.html
-
-# .txt → 纯文本，自动去除 ANSI 颜色码，适合 grep/awk
+#    .txt → 纯文本，自动去除 ANSI 颜色码，适合 grep/awk
 python yscan.py port -H 10.0.0.1 -p 1-1024 -o ports.txt
+
+# 2. 结果导出（dns/http）— 导出纯 IP / 存活地址列表
+python yscan.py dns -t domains.txt -o ips.txt
+python yscan.py http -t hosts.txt -o alive.txt
 ```
 
 ---
@@ -343,7 +432,7 @@ python yscan.py port -H 10.0.0.1 -p 1-1024 -o ports.txt
 | 🎯 智能触发 | 只有 22/3306/6379 开放才触发对应弱口令模块 |
 | 📊 动态进度条 | `alive-progress` 单行刷新，始终钉在终端底部 |
 | 📝 结果持久化 | `-o` 一键生成 HTML（暗色主题）或 TXT 报告 |
-| 🌍 跨平台 | IP 存活探测自动适配 Windows/Linux/macOS ping |
+| 🌍 内网穿透 | ARP 二层探测绕过 ICMP 禁用，自动匹配同网段网卡 |
 | 🔐 安全设计 | `shell=False` 杜绝命令注入，无 eval 执行 |
 
 ### 字典库规模
@@ -370,6 +459,8 @@ YSCAN/
 │   ├── redis_burte.py    # Redis 弱口令 + 未授权利用（公私钥/cron）
 │   ├── dir_scan.py       # Web 目录爆破（requests + Session 复用）
 │   ├── subdomain_scan.py # DNS 子域名枚举（dnspython）
+│   ├── dns_resolve.py    # 域名 → IP 解析（dnspython，多线程 + 进度条）
+│   ├── http_probe.py     # 外网 HTTP 存活探测（requests，200 判活 + 进度条）
 │   ├── ip_scan.py        # ARP 存活探测（scapy L2，禁 ICMP 仍可探测）
 │   ├── arp_attack.py     # ARP 欺骗攻击（伪装网关，随机 MAC 洪泛）
 │   ├── AddressTools.py   # CIDR/网段/IP范围 解析器

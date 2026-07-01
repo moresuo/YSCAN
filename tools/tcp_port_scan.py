@@ -233,12 +233,13 @@ def scan_tcp_port_collect_hosts(hosts, ports, threads, timeout=1, on_open=None, 
 
 
 #端口扫描入口
-def scan_tcp_port_run(host, ports, threads):
+#check_alive：是否做存活预检。外网目标常禁 ICMP，预检会误杀，传 False 跳过
+def scan_tcp_port_run(host, ports, threads, check_alive=True):
     from tools.color import console
     from tools.ip_scan import _ping_alive
 
-    # 先检测存活，不存活直接跳过
-    if not _ping_alive(host):
+    # 先检测存活，不存活直接跳过（外网域名场景跳过预检）
+    if check_alive and not _ping_alive(host):
         console.print(f"[host]{host}[/host] [fail]✗ 主机不存活，跳过端口扫描[/fail]")
         return
 
