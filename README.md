@@ -558,5 +558,5 @@ MIT © moresuo
 ---
 
 <p align="center">
-  <strong>⚡ 渗透测试，一秒出活 — 试试 YSCAN 吧</strong>
+  <strong>⚡ 渗透测试，一秒出活 — 试试 YSCAN 吧(手捏tscan,脚踹fscan)</strong>
 </p>
