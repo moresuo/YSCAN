@@ -1,7 +1,26 @@
+# YSCAN 依赖清单
+# 安装: pip install -r requirements.txt
+# Windows 使用 scapy 需先安装 Npcap: https://npcap.com/
+
+# ── 终端 UI / 进度条 ──
 alive-progress>=3.3.0
 rich>=13.0.0
-paramiko>=3.0.0
-PyMySQL>=1.0.0
-redis>=5.0.0
-requests>=2.28.0
-dnspython>=2.3.0
+
+# ── 网络扫描 / 攻击（ip / arp 子命令，需 Npcap）──
+scapy>=2.5.0
+
+# ── HTTP / 爬虫 ──
+requests>=2.28.0          # dir / http / ruoyi 子命令
+curl_cffi>=0.7.0          # info 子命令（模拟 Chrome 指纹绕过反爬）
+beautifulsoup4>=4.12.0    # info 子命令 HTML 解析
+
+# ── DNS ──
+dnspython>=2.3.0          # subdomain / dns 子命令
+
+# ── 弱口令检测 ──
+paramiko>=3.0.0           # ssh 子命令
+PyMySQL>=1.0.0            # mysql 子命令
+redis>=5.0.0              # redis 子命令
+
+# ── 可选：若依验证码 OCR（ruoyi 子命令，未安装则跳过带验证码站点）──
+# ddddocr

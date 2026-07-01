@@ -24,6 +24,8 @@ from tools.ip_scan import scan_ip_run
 from tools.arp_attack import arp_attack_run
 from tools.dns_resolve import scan_dns_run
 from tools.http_probe import scan_http_run
+from tools.site_info import scan_site_info_run
+from tools.ruoyi_scan import scan_ruoyi_run
 from tools.PortTools import iter_ports
 from tools.tcp_port_scan import scan_tcp_port_run, get_top_ports
 from tools.scan_run import scan_run
@@ -135,14 +137,26 @@ dns_subparser = subprocess.add_parser("dns", help="域名解析为IP")
 dns_subparser.add_argument("-u", "--url", dest="url", type=str, default=None, help="单个域名")
 dns_subparser.add_argument("-t", "--file", dest="domain_file", type=str, default=None, help="域名文件路径（一行一个域名）")
 dns_subparser.add_argument("-o", "--output", dest="ip_file", type=str, default=None, help="解析出的IP保存文件路径")
-dns_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
+dns_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=200)
 
 # 外网 HTTP 存活探测（不继承 parent_parser，-o 语义为导出存活地址）
 http_subparser = subprocess.add_parser("http", help="外网HTTP存活探测")
 http_subparser.add_argument("-H", "--host", dest="host", type=str, default=None, help="单个地址（域名/IP:port/URL）")
 http_subparser.add_argument("-t", "--file", dest="host_file", type=str, default=None, help="地址文件路径（一行一个）")
 http_subparser.add_argument("-o", "--output", dest="alive_file", type=str, default=None, help="存活地址导出文件路径")
-http_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
+http_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=200)
+
+# 站点资产权重查询（爬虫，爱站数据源）
+info_subparser = subprocess.add_parser("info", parents=[parent_parser], help="站点资产权重查询")
+info_subparser.add_argument("-u", "--url", dest="url", type=str, required=True, help="目标域名（如 baidu.com）")
+info_subparser.add_argument("-x", "--proxy", dest="proxy", type=str, default=None, help="HTTP/SOCKS代理（如 http://127.0.0.1:7890）")
+
+# 若依弱密码检测（不继承 parent_parser，-o 语义为导出弱密码结果）
+ruoyi_subparser = subprocess.add_parser("ruoyi", help="若依项目弱密码检测")
+ruoyi_subparser.add_argument("-H", "--host", dest="host", type=str, default=None, help="单个目标网站")
+ruoyi_subparser.add_argument("-t", "--file", dest="target_file", type=str, default=None, help="目标文件路径（一行一个网站）")
+ruoyi_subparser.add_argument("-o", "--output", dest="ruoyi_output", type=str, default=None, help="弱密码结果导出文件")
+ruoyi_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
 
 # 端口扫描
 port_subparser = subprocess.add_parser("port", parents=[parent_parser], help="端口扫描")
@@ -275,6 +289,24 @@ try:
         else:
             scan_http_run(targets, threads=args.threads, output_file=args.alive_file)
             console.print("[header]✓ HTTP探测完成[/header]")
+    elif args.subparser_name == "info":
+        scan_site_info_run(args.url.strip(), proxy=args.proxy)
+        console.print("[header]✓ 资产查询完成[/header]")
+    elif args.subparser_name == "ruoyi":
+        # -H 单目标 与 -t 目标文件 可同时使用，合并去重
+        targets = []
+        if args.target_file:
+            from tools.WordlistTools import load_lines
+            targets.extend(load_lines(args.target_file))
+        if args.host:
+            targets.append(args.host)
+        seen = set()
+        targets = [t for t in targets if not (t in seen or seen.add(t))]
+        if not targets:
+            console.print("[warn]⚠ 请用 -H 指定目标或 -t 指定目标文件[/warn]")
+        else:
+            scan_ruoyi_run(targets, threads=args.threads, output_file=args.ruoyi_output)
+            console.print("[header]✓ 若依检测完成[/header]")
 except KeyboardInterrupt:
     console.print("\n[warn]⏎ 用户中断，任务已取消[/warn]")
 except Exception as e:

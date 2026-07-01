@@ -10,7 +10,7 @@
 
 内网渗透最烦什么？**工具散、界面丑、扫完没记录**。
 
-YSCAN 把 **11 项核心能力** 集成到一个命令里：
+YSCAN 把 **13 项核心能力** 集成到一个命令里：
 
 | 能力 | 命令 | 一句话 |
 |------|------|--------|
@@ -19,6 +19,8 @@ YSCAN 把 **11 项核心能力** 集成到一个命令里：
 | 📡 内网存活探测 | `ip` | ARP 二层探测，主机禁 ICMP 仍可发现，自动选网卡 |
 | 🌐 外网存活探测 | `http` | httpx 式 HTTP 探测，响应 200 判活，批量地址文件 |
 | 🔗 域名解析 | `dns` | 域名→IP，支持单域名/域名文件，解析结果导出 |
+| 📊 资产权重查询 | `info` | 爬虫查询站点 SEO 权重 + ICP 备案 + 公司信息 |
+| 🏗️ 若依弱密码检测 | `ruoyi` | 若依框架专项弱密码检测，前缀探测+验证码OCR+多分支 |
 | ⚡ ARP 欺骗攻击 | `arp` | 伪装网关洪泛 ARP 响应，随机 MAC 污染靶机缓存 |
 | 🔑 SSH 爆破 | `ssh` | Paramiko 驱动，500 线程并发 |
 | 🗄️ MySQL 爆破 | `mysql` | 爆出版本号，方便后续利用 |
@@ -99,6 +101,8 @@ pip install -i https://mirrors.huaweicloud.com/repository/pypi/simple -r require
 | `requests` | ≥2.28 | HTTP 目录扫描 / 外网存活探测 |
 | `dnspython` | ≥2.3 | DNS 子域名枚举 / 域名解析 |
 | `scapy` | ≥2.5 | ARP 存活探测 / ARP 欺骗攻击（需 Npcap） |
+| `curl_cffi` | ≥0.7 | 资产权重查询（模拟 Chrome 指纹绕过反爬） |
+| `beautifulsoup4` | ≥4.12 | 资产页面 HTML 解析 |
 
 > **最低 Python 版本要求：3.9+**
 
@@ -339,7 +343,49 @@ python yscan.py dns -t domains.txt -T 200 -o ips.txt
 
 ---
 
-### 11. ARP 欺骗攻击 `arp` — 伪装网关断网
+### 11. 资产权重查询 `info` — 站点 SEO 权重 + ICP 备案
+
+爬虫查询域名资产信息（数据源：爱站网）。返回站点标题、7 大搜索引擎权重、ICP 备案（备案号/性质/公司名称/审核时间）。使用 `curl_cffi` 模拟 Chrome 指纹绕过基础反爬。
+
+```bash
+# 查询单个域名
+python yscan.py info -u baidu.com
+
+# 输出 HTML 报告
+python yscan.py info -u taobao.com -o info.html
+```
+
+> **参数全览**：`-u` 目标域名（必填，如 `baidu.com`） · `-x` 代理 · `-o` 输出文件
+>
+> 🛡️ 多维反爬：curl_cffi Chrome 指纹 + 完整浏览器头 + 多 UA 轮换 + 随机延迟 + Session Cookie 复用 + 指数退避重试（8 次）+ 风控页面检测 + 代理支持。被风控时可用 `-x http://host:port` 换出口。仅用于授权信息收集。
+
+---
+
+### 12. 若依弱密码检测 `ruoyi` — 框架专项弱密码扫描
+
+针对若依（RuoYi）框架优化：先探测有效 API 前缀只打真实 login 接口，支持 JSON 验证码 OCR（需 ddddocr）、表单数学验证码、通用 JSON、Basic Auth 多分支，登录成功判定保守低误报。
+
+```bash
+# 单目标检测
+python yscan.py ruoyi -H http://target.com
+
+# 批量检测目标文件（一行一个网站，可直接喂入 http 探测的存活结果）
+python yscan.py ruoyi -t alive.txt
+
+# 检测 + 导出弱密码结果
+python yscan.py ruoyi -t alive.txt -o weak.txt
+
+# 调整并发（默认 100）
+python yscan.py ruoyi -t alive.txt -T 200 -o weak.txt
+```
+
+> **参数全览**：`-H` 单目标 · `-t` 目标文件 · `-o` 弱密码结果导出 · `-T` 线程数（默认 100）
+>
+> 💡 默认测 `admin/admin123`、`admin/admin`、`admin/123456`。验证码 OCR 需 `pip install ddddocr`，未安装时自动跳过带验证码站点（无验证码站点仍可检测）。仅用于授权测试。
+
+---
+
+### 13. ARP 欺骗攻击 `arp` — 伪装网关断网
 
 向靶机洪泛 ARP 响应（is-at），`psrc` 伪装成网关 IP、`hwsrc` 每包随机 MAC，污染靶机 ARP 缓存致其断网。
 
@@ -461,6 +507,8 @@ YSCAN/
 │   ├── subdomain_scan.py # DNS 子域名枚举（dnspython）
 │   ├── dns_resolve.py    # 域名 → IP 解析（dnspython，多线程 + 进度条）
 │   ├── http_probe.py     # 外网 HTTP 存活探测（requests，200 判活 + 进度条）
+│   ├── site_info.py      # 站点资产权重查询（curl_cffi 爬虫，爱站数据源）
+│   ├── ruoyi_scan.py     # 若依项目弱密码检测（前缀探测+验证码OCR+多分支）
 │   ├── ip_scan.py        # ARP 存活探测（scapy L2，禁 ICMP 仍可探测）
 │   ├── arp_attack.py     # ARP 欺骗攻击（伪装网关，随机 MAC 洪泛）
 │   ├── AddressTools.py   # CIDR/网段/IP范围 解析器
