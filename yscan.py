@@ -130,7 +130,8 @@ arp_subparser.add_argument("-H", "--host", dest="host", type=str, required=True,
 arp_subparser.add_argument("-g", "--gateway", dest="gateway", type=str, default=None, help="伪装的网关IP（默认自动推断同网段.1）")
 arp_subparser.add_argument("-I", "--iface", dest="iface", type=str, default=None, help="发包网卡名称/描述（默认按靶机网段自动选择）")
 arp_subparser.add_argument("-n", "--num", dest="num", type=int, default=10000, help="发送ARP响应包数量（默认10000）")
-arp_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=200)
+arp_subparser.add_argument("-m", "--mac", dest="fake_mac", type=str, default=None, help="伪装网关MAC（默认会话内固定随机MAC）")
+arp_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=0, help="并发线程数（默认取发包数；数值越高爆发越强）")
 
 # 域名解析（不继承 parent_parser，-o 语义为保存解析出的 IP，区别于全局报告）
 dns_subparser = subprocess.add_parser("dns", help="域名解析为IP")
@@ -256,7 +257,7 @@ try:
             scan_tcp_port_run(target, ports, args.threads, check_alive=check_alive)
         console.print("[header]✓ 端口扫描完成[/header]")
     elif args.subparser_name == "arp":
-        arp_attack_run(args.host, args.gateway, args.num, args.iface, args.threads)
+        arp_attack_run(args.host, args.gateway, args.num, args.iface, args.threads, fake_mac=args.fake_mac)
         console.print("[header]✓ ARP攻击完成[/header]")
     elif args.subparser_name == "dns":
         # -u 单域名 与 -T 域名文件 可同时使用，合并去重
