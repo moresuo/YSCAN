@@ -202,6 +202,7 @@ def get_host_info(domain, proxy=None):
     # ICP 备案信息
     icp = {
         "备案号": _select_text(soup, "#icp > li > a"),
+        "备案地址": _select_text(soup, "#icp > li > a", "href"),
         "性质": _select_text(soup, "#icp_type"),
         "公司名称": _select_text(soup, "#icp_company"),
         "审核时间": _select_text(soup, "#icp_passtime"),
