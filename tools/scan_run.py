@@ -104,6 +104,13 @@ def scan_run(hosts, threads=500, password="", username="root", top=100):
         if remaining > 0:
             _bar(remaining)
 
+    # ── 扫描完成后打印 ARP 存活但零开放端口的主机 ──
+    # 避免用户误以为"端口扫描漏了这些主机"，实际是端口没开
+    scanned_no_open = [h for h in alive_hosts if h not in open_map]
+    if scanned_no_open:
+        for h in sorted(scanned_no_open, key=lambda x: ipaddress.ip_address(x)):
+            console.print(f"  [dim]{h}  — 无开放端口[/dim]")
+
     # ── 空端口提示 ──
     if not announced:
         console.print()
