@@ -10,11 +10,12 @@
 
 内网渗透最烦什么？**工具散、界面丑、扫完没记录**。
 
-YSCAN 把 **13 项核心能力** 集成到一个命令里：
+YSCAN 把 **14 项核心能力** 集成到一个命令里：
 
 | 能力 | 命令 | 一句话 |
 |------|------|--------|
-| 🎯 一键扫描 | `scan` | 端口→弱口令全自动，发现 SSH/MySQL/Redis 立即爆破 |
+| 🎯 一键扫描 | `scan` | 端口→弱口令→指纹识别全自动，发现 SSH/MySQL/Redis 立即爆破 |
+| 🧬 Web 指纹识别 | `finger` | 11442 产品指纹库，精准识别各类 CMS/OA/框架（含若依/通达/致远/泛微等） |
 | 🔌 端口扫描 | `port` | 异步 TCP Connect，支持 IP/域名，Top100 端口 1 秒出结果 |
 | 📡 内网存活探测 | `ip` | ARP 二层探测，主机禁 ICMP 仍可发现，自动选网卡 |
 | 🌐 外网存活探测 | `http` | httpx 式 HTTP 探测，响应 200 判活，批量地址文件 |
@@ -361,7 +362,29 @@ python yscan.py info -u taobao.com -o info.html
 
 ---
 
-### 12. 若依弱密码检测 `ruoyi` — 框架专项弱密码扫描
+### 12. Web 指纹识别 `finger` — 11442 产品精准识别
+识别目标网站运行的 CMS/OA/框架/中间件/设备品牌，基于 11442 产品/12447 条规则的指纹库。支持单个 URL 或批量，每行展示指纹+命中关键词方便判断可信度。
+
+```bash
+# 单目标识别
+python yscan.py finger -t https://target.com
+
+# 批量识别目标文件（一行一个URL）
+python yscan.py finger -l urls.txt
+
+# 调整并发和超时
+python yscan.py finger -t https://target.com -T 50 --timeout 5
+
+# 输出 HTML/TXT 报告
+python yscan.py finger -l urls.txt -o finger_report.html
+```
+
+> **参数全览**：`-t` 单目标URL · `-l` 目标文件（一行一个） · `-T` 线程数（默认 100） · `--timeout` 超时秒数（默认 8） · `-o` 输出文件
+>
+> 💡 一键扫描 `scan` 中已内置指纹识别：只对开放 80/443/8080 端口的存活主机做快速识别。指纹库含通达OA、若依、致远、泛微、蓝凌、ThinkPHP、Spring、Shiro、Nacos 等国内常见应用。误报已通过关键词特异性过滤优化（`login`/`password` 等通用词自动剔除）。
+
+---
+### 13. 若依弱密码检测 `ruoyi` — 框架专项弱密码扫描
 
 针对若依（RuoYi）框架优化：先探测有效 API 前缀只打真实 login 接口，支持 JSON 验证码 OCR（需 ddddocr）、表单数学验证码、通用 JSON、Basic Auth 多分支，登录成功判定保守低误报。
 
@@ -385,7 +408,7 @@ python yscan.py ruoyi -t alive.txt -T 200 -o weak.txt
 
 ---
 
-### 13. ARP 欺骗攻击 `arp` — 伪装网关断网
+### 14. ARP 欺骗攻击 `arp` — 伪装网关断网
 
 向靶机洪泛 ARP 响应（is-at），`psrc` 伪装成网关 IP、`hwsrc` 每包随机 MAC，污染靶机 ARP 缓存致其断网。
 
@@ -461,7 +484,14 @@ python yscan.py http -t hosts.txt -o alive.txt
 │ 弱口令检测  │ ← 按主机逐个触发
 │ SSH/MySQL/  │   每台主机只尝试相关服务
 │ Redis       │   命中一台即跳过后续尝试
-└─────────────┘
+└─────┬───────┘
+      │ 发现 80/443/8080
+      ▼
+┌─────────────┐
+│ 指纹识别    │ ← 存活主机 Web 端口自动识别
+│ CMS/OA/框架 │   通达OA/若依/致远/泛微一键识别
+│ 设备/中间件 │   11442 产品指纹库精准匹配
+└─────┬───────┘
       │
       ▼
 ┌─────────────┐
@@ -475,16 +505,18 @@ python yscan.py http -t hosts.txt -o alive.txt
 |------|------|
 | ⚡ 异步端口扫描 | `asyncio` + 500 并发，25400 任务 51s 完成 |
 | 🔄 实时流式输出 | 发现开放端口立即打印，不等到全部扫完 |
-| 🎯 智能触发 | 只有 22/3306/6379 开放才触发对应弱口令模块 |
+| 🎯 智能触发 | 只有 22/3306/6379 开放才触发对应弱口令模块，80/443/8080 触发指纹识别 |
 | 📊 动态进度条 | `alive-progress` 单行刷新，始终钉在终端底部 |
 | 📝 结果持久化 | `-o` 一键生成 HTML（暗色主题）或 TXT 报告 |
 | 🌍 内网穿透 | ARP 二层探测绕过 ICMP 禁用，自动匹配同网段网卡 |
+| 🧬 指纹识别 | 递归下降表达式解析器 + 11442 产品指纹库 + 关键词特异性过滤 |
 | 🔐 安全设计 | `shell=False` 杜绝命令注入，无 eval 执行 |
 
 ### 字典库规模
 
 | 字典 | 条目数 | 用途 |
 |------|:---:|------|
+| `finger.yaml` | 11,496 产品 / 12,447 规则 | Web 指纹识别（多源合并） |
 | `passwords.txt` | 947 | 弱口令爆破 |
 | `users.txt` | 8,885 | 用户名字典 |
 | `dirpath.txt` | 9,645 | Web 目录扫描 |
@@ -496,9 +528,13 @@ python yscan.py http -t hosts.txt -o alive.txt
 
 ```text
 YSCAN/
-├── yscan.py              # CLI 入口，argparse 路由
+├── yscan.py              # CLI 入口，argparse 路由 16 个子命令
+├── build_finger.py       # 指纹库合并脚本（多源→去重→finger.yaml）
+├── build_encrypted.py    # 代码加密构建脚本（.py→pyc→AES-256-CBC）
+├── yscan.spec            # PyInstaller 打包配置
 ├── tools/
-│   ├── scan_run.py       # 一键扫描编排引擎
+│   ├── scan_run.py       # 一键扫描编排引擎（ARP→端口→弱口令→指纹→汇总）
+│   ├── finger_scan.py    # Web 指纹识别（递归下降解析器 + 11442 产品指纹库）
 │   ├── tcp_port_scan.py  # asyncio TCP 端口扫描 + PORT_SERVICE 映射表
 │   ├── ssh_burte.py      # SSH 弱口令（Paramiko）
 │   ├── mysql_burte.py    # MySQL 弱口令（PyMySQL）
@@ -515,14 +551,25 @@ YSCAN/
 │   ├── PortTools.py      # 端口表达式解析器
 │   ├── WordlistTools.py  # 字典去重加载器
 │   ├── SchedulerTools.py # ThreadPoolExecutor 调度器
+│   ├── AliveTools.py     # TCP 存活预检
+│   ├── ProgressTools.py  # 爆破进度条（alive_bar 封装）
 │   ├── OutputTools.py    # TeeWriter — TXT/HTML 报告生成
 │   ├── color.py          # Rich Console + ANSI Colors 常量
-│   └── __init__.py
+│   ├── _decrypt_loader.py # sys.meta_path 导入钩子（AES 内存解密）
+│   ├── _encrypted/       # AES-256-CBC 加密模块目录
+│   └── __init__.py       # 包初始化（安装解密钩子）
 ├── libs/
+│   ├── finger.yaml       # 指纹规则库（fofa 表达式语法）
 │   ├── passwords.txt     # 947 条密码
 │   ├── users.txt         # 8,885 条用户名
 │   ├── dirpath.txt       # 9,645 条 Web 路径
 │   └── subdomain.txt     # 9,999 条子域名词
+├── build_linux/          # Linux 构建环境
+│   ├── build.sh          # 一键构建脚本（venv→依赖→加密→PyInstaller）
+│   ├── Dockerfile        # Docker 容器化构建
+│   └── README.md         # Linux 构建说明
+├── dist/                 # 构建产物
+│   └── yscan.exe         # Windows 单文件可执行文件
 └── README.md
 ```
 

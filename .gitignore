@@ -5,3 +5,10 @@ CLAUDE.md
 __pycache__/
 */__pycache__/
 *.pyc
+build/
+dist/
+.pyarmor/
+pyarmor.bug.log
+*.spec.bak
+tools/_encrypted/
+tools/_decrypt_loader.py.bak

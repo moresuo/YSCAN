@@ -20,6 +20,10 @@ ddddocr>=1.4.0
 pycryptodome>=3.20.0
 setproctitle>=1.3.0
 
+# Fingerprint recognition
+pyyaml>=6.0
+mmh3>=3.0
+
 # Console & progress UI
 rich>=13.0.0
 alive-progress>=3.3.0

@@ -24,6 +24,7 @@ from tools.mysql_burte import scan_mysql_run
 from tools.redis_burte import scan_redis_run
 from tools.ssh_burte import scan_ssh_run
 from tools.tcp_port_scan import get_top_ports, scan_tcp_port_collect_hosts, PORT_SERVICE
+from tools.finger_scan import identify_url, load_fingerprints
 
 def scan_run(hosts, threads=500, password="", username="root", top=100):
     top_ports = get_top_ports(top)
@@ -145,6 +146,39 @@ def scan_run(hosts, threads=500, password="", username="root", top=100):
             console.print("  [info]→ Redis 弱口令检测[/info]")
             scan_redis_run([alive_host], 6379, password, None, None, 8888, threads)
 
+    # ── 指纹识别（仅扫描存活主机开放 80/443/8080 端口，类似 fscan）──
+    finger_hosts = []  # [(host, url)]
+    for alive_host in sorted(announced):
+        ports = open_map.get(alive_host, [])
+        if 443 in ports:
+            finger_hosts.append((alive_host, f"https://{alive_host}:443"))
+        if 80 in ports:
+            finger_hosts.append((alive_host, f"http://{alive_host}:80"))
+        if 8080 in ports:
+            finger_hosts.append((alive_host, f"http://{alive_host}:8080"))
+
+    finger_count = 0
+    if finger_hosts:
+        console.print()
+        console.print(Rule("[header]指纹识别[/header]", style="dim"))
+        fps = load_fingerprints()
+        for host, url in finger_hosts:
+            _, matched = identify_url(url, fps)
+            if matched is None:
+                console.print(f"  [fail]✗ {host} ({url}) HTTP 不可达[/fail]")
+                continue
+            if matched:
+                finger_count += 1
+                console.print(f"  [success]●[/success] [host]{host}[/host] [dim]({url})[/dim]")
+                for prod, kws in matched:
+                    kw_str = f" [dim]({' / '.join(kws)})[/dim]" if kws else ""
+                    console.print(f"    [highlight]{prod}[/highlight]{kw_str}")
+            else:
+                console.print(f"  [dim]○ {host} ({url}) 未识别[/dim]")
+    else:
+        console.print()
+        console.print("[warn]⚠ 未发现 Web 端口(80/443/8080)，跳过指纹识别[/warn]")
+
     # ── 汇总表格 ──
     console.print()
     table = Table(box=None, show_header=False, padding=(0, 2))
@@ -154,4 +188,5 @@ def scan_run(hosts, threads=500, password="", username="root", top=100):
     table.add_row("ARP 存活", f"[success]{alive_count}[/success]")
     table.add_row("开放主机", f"[highlight]{len(announced)}[/highlight]")
     table.add_row("开放端口", f"[highlight]{total_open}[/highlight]")
+    table.add_row("指纹识别", f"[highlight]{finger_count}[/highlight]")
     console.print(Panel(table, title="[header]扫描汇总[/header]", border_style="dim"))

@@ -30,12 +30,13 @@ from tools.dns_resolve import scan_dns_run
 from tools.http_probe import scan_http_run
 from tools.site_info import scan_site_info_run
 from tools.ruoyi_scan import scan_ruoyi_run
+from tools.finger_scan import scan_finger_run
 from tools.PortTools import iter_ports
 from tools.tcp_port_scan import scan_tcp_port_run, get_top_ports
 from tools.scan_run import scan_run
 from tools.color import console, Colors
 from tools.OutputTools import TeeWriter
-from tools.online import online_xixi
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DIR_PATH = BASE_DIR / "libs" / "passwords.txt"
@@ -164,6 +165,13 @@ def main():
     ruoyi_subparser.add_argument("-t", "--file", dest="target_file", type=str, default=None, help="目标文件路径（一行一个网站）")
     ruoyi_subparser.add_argument("-o", "--output", dest="ruoyi_output", type=str, default=None, help="弱密码结果导出文件")
     ruoyi_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
+
+    # 指纹识别（继承 parent_parser，-o 输出 txt/html 报告）
+    finger_subparser = subprocess.add_parser("finger", parents=[parent_parser], help="Web指纹识别")
+    finger_subparser.add_argument("-t", "--url", dest="url", type=str, default=None, help="单个目标URL")
+    finger_subparser.add_argument("-l", "--list", dest="target_file", type=str, default=None, help="目标文件路径（一行一个URL）")
+    finger_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=100)
+    finger_subparser.add_argument("--timeout", dest="timeout", type=float, default=8.0, help="单请求超时秒数（默认8）")
 
     # 端口扫描
     port_subparser = subprocess.add_parser("port", parents=[parent_parser], help="端口扫描")
@@ -314,6 +322,21 @@ def main():
             else:
                 scan_ruoyi_run(targets, threads=args.threads, output_file=args.ruoyi_output)
                 console.print("[header]✓ 若依检测完成[/header]")
+        elif args.subparser_name == "finger":
+            # -t 单URL 与 -l 批量文件 可同时使用，合并去重
+            targets = []
+            if args.target_file:
+                from tools.WordlistTools import load_lines
+                targets.extend(load_lines(args.target_file))
+            if args.url:
+                targets.append(args.url)
+            seen = set()
+            targets = [t for t in targets if not (t in seen or seen.add(t))]
+            if not targets:
+                console.print("[warn]⚠ 请用 -t 指定URL或 -l 指定目标文件[/warn]")
+            else:
+                scan_finger_run(targets, threads=args.threads, timeout=args.timeout)
+                console.print("[header]✓ 指纹识别完成[/header]")
     except KeyboardInterrupt:
         console.print("\n[warn]⏎ 用户中断，任务已取消[/warn]")
     except Exception as e:
@@ -328,65 +351,11 @@ def main():
                 pass
 
 
-def _run_detached_worker():
-    """
-    这是脱离主进程后，子进程真正执行的逻辑。
-    注意：此时没有控制台窗口，不要使用 print 或 rich.console，建议写日志文件。
-    """
-    try:
-        # 设置系统级进程名 (可选，需 pip install setproctitle)
-        import setproctitle
-        setproctitle.setproctitle("YSCAN_BG_Worker")
-    except ImportError:
-        pass
 
-    # 执行你的后台任务
-    # 注意：online_xixi 内部如果用了 rich.console.print，可能会因为 stdout 丢失而报错
-    # 建议在 online_xixi 内部捕获异常，或将输出重定向到文件
-    online_xixi("DataSync")
 
 
 # ==========================================
 # 终极入口保护罩
 # ==========================================
 if __name__ == '__main__':
-    # 【关键拦截】：检查是否是被主进程在后台唤醒的“子进程”
-    if "--_yscan_bg_worker" in sys.argv:
-        # 如果是子进程，直接执行后台任务，然后自然退出
-        _run_detached_worker()
-        sys.exit(0)
-
-    # 【主进程逻辑】：
-    # 1. 先执行正常的 CLI 扫描主流程
     main()
-
-    # 2. 主流程执行完毕后，准备将后台任务“发射”出去并脱离
-    cmd = [
-        sys.executable,  # 当前使用的 Python 解释器路径
-        os.path.abspath(__file__),  # 当前脚本的绝对路径 (yscan.py)
-        "--_yscan_bg_worker"  # 触发子进程分支的隐藏参数
-    ]
-
-    # 【核心魔法】：Windows 下的进程脱离标志
-    CREATE_NO_WINDOW = 0x08000000  # 不创建新的命令行黑框
-    DETACHED_PROCESS = 0x00000008  # 脱离父进程的控制台
-    CREATE_NEW_PROCESS_GROUP = 0x00000200  # 创建新的进程组，防止 Ctrl+C 传递给子进程
-
-    if sys.platform == "win32":
-        # Windows 下使用特殊标志彻底脱离
-        subprocess.Popen(
-            cmd,
-            creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-            stdout=subprocess.DEVNULL,  # 丢弃子进程的标准输出
-            stderr=subprocess.DEVNULL  # 丢弃子进程的标准错误
-        )
-    else:
-        # Linux/macOS 下的脱离方式
-        subprocess.Popen(
-            cmd,
-            start_new_session=True,  # 等同于 Linux 下的 setsid()，脱离当前终端
-            close_fds=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
