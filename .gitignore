@@ -6,7 +6,7 @@ __pycache__/
 */__pycache__/
 *.pyc
 build/
-dist/
+
 .pyarmor/
 pyarmor.bug.log
 *.spec.bak
