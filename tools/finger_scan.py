@@ -258,6 +258,18 @@ _LOW_SPEC_KWS = frozenset({
     "info", "api", "www", "http", "net", "com", "org",
     "file", "path", "root", "temp", "public", "static",
     "window.location", "/js/app", "/static/img/title.ico",
+    # 前端框架/库通用组件词（bootstrap, jquery 等的通配文件）
+    "bootstrap.min.css", "bootstrap.css", "bootstrap.min.js",
+    "bootstrap.js", "bootstrap", "jquery", "jquery.min.js",
+    "jquery.js", "navbar-toggle", "assets/img/favicon.ico",
+    "assets/js", "assets/css", "ajax/upload",
+})
+
+# 库/语言/中间件级产品名（CMS/应用产品命中时自动隐藏这些噪声）
+_LIB_NOISE = frozenset({
+    "bootstrap", "bootstrap-cdn", "jquery", "php",
+    "nginx", "apache", "iis", "tomcat", "openresty",
+    "font awesome", "font-awesome",
 })
 
 
@@ -266,13 +278,37 @@ def _is_specific_hit(field, kw):
     if field in ("icon_hash", "status"):
         return True
     kw_clean = kw.strip()
-    if kw_clean.lower() in _LOW_SPEC_KWS:
+    kw_lower = kw_clean.lower()
+    if kw_lower in _LOW_SPEC_KWS:
         return False
     if field == "header":
         return len(kw_clean) >= 8
     if field in ("body", "title"):
         return len(kw_clean) >= 6
     return len(kw_clean) >= 5
+
+
+def _match_score(product, kws):
+    """计算产品匹配置信度分数（越高越可信）。
+    icon_hash > 长关键词 > 短关键词；长度加权。
+    """
+    score = 0
+    for kw in kws:
+        kw_len = len(kw)
+        if kw_len >= 15:
+            score += 10  # 长关键词极特异
+        elif kw_len >= 10:
+            score += 7
+        elif kw_len >= 6:
+            score += 4
+        else:
+            score += 1
+    return score
+
+
+def _is_lib_product(product):
+    """判断产品名是否为库/中间件级（而非应用/CMS/OA）。"""
+    return product.strip().lower() in _LIB_NOISE
 
 
 def _get_field(field, ctx):
@@ -483,13 +519,27 @@ def identify_url(url, fingerprints=None, timeout=TIMEOUT, session=None):
             ok, hit_words = _eval_hit_words(ast, ctx)
             if not ok:
                 continue
-            # 只保留高特异性命中词，过滤 OR 分支里的通用词（如 window.location）
+            # 只保留高特异性命中词，过滤 OR 分支里的通用词
             specific = [(f, kw) for f, kw in hit_words if _is_specific_hit(f, kw)]
             if specific:
                 kws = [kw for _, kw in specific[:3]]
-                matched.append((product, kws))
+                score = _match_score(product, kws)
+                matched.append((score, product, kws))
             break  # 每产品命中一条即够
-    return url, matched
+
+    if not matched:
+        return url, []
+
+    # 评分排序（高置信度在前），过滤纯库噪声
+    matched.sort(key=lambda x: -x[0])
+    has_app = any(not _is_lib_product(p) for _, p, _ in matched)
+    result = []
+    for score, product, kws in matched:
+        # 有应用级产品命中时，跳过纯库/中间件噪声
+        if has_app and _is_lib_product(product):
+            continue
+        result.append((product, kws))
+    return url, result
 
 
 # ════════════════════════════════════════════════════════════════

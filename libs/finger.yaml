@@ -21229,6 +21229,8 @@ Welcm - Hui Xueyun Education:
   - body="ctl00_ContentPlaceHolder1_dltTopVideos" || header="SchoolCopyRight" || banner="SchoolCopyRight"
 wellcare-health-management-system:
   - (body="href=\"/web/vfyphrmedical\">健康档案</a></li>" || body="www.wellcare.cn")
+wellCMS:
+  - title="WellCMS" || body="WellCMS X" || body="www.wellcms.cn" || header="well_sid=" || body="view/js/xiuno.js" || body="Powered by <a href="http://www.wellcms.cn/""
 Wen Net Yilian - Wen Wang Guardian Safety Router:
   - title="文网卫士安全路由器"
 Wen Net Yuri - Wen Wang Guardian Qigamai WAN Intelligent Router:
@@ -21693,10 +21695,10 @@ xitami:
   - 'header="server: xitami"'
 Xitami-FTP:
   - banner="Xitami FTP server"
-xiuno:
-  - body="xiuno/xiunobbs"
 Xiuno-BBS:
   - body="Xiuno BBS" || body="plugin/zaesky_theme_xiunoo/view/css/bootstrap.css?1.0" || body="view/js/xiuno.js?1.0" || body="xiuno.min.js"
+  - body="xiuno" || body="view/js/xiuno.js" || body="xiuno/xiunobbs" || header="well_sid=" || body="view/js/bbs.js" || body="xn.options.water_image_url"
+  - body="xiuno/xiunobbs"
 xjhtqy-crm:
   - body="class=\"hidden-xs ewheaderrow\"><img src=\"aspximages/htqy.png\""
 xjhyt-system:
