@@ -20,6 +20,7 @@ from rich.text import Text
 
 from tools.AddressTools import iter_segments
 from tools.mysql_burte import scan_mysql_run, scan_mysql_run_file
+from tools.mysql_udf import udf_escalate
 from tools.redis_burte import scan_redis_run
 from tools.ssh_burte import scan_ssh_run, scan_ssh_run_file
 from tools.dir_scan import scan_dir_run
@@ -85,6 +86,7 @@ def main():
     mysql_subparser.add_argument("-u", "--username", dest="username", type=str, help="MySQL用户名", default="root")
     mysql_subparser.add_argument("-p", "--password", dest="password", type=str, help="MySQL密码本路径", default=DIR_PATH)
     mysql_subparser.add_argument("-T", "--threads", dest="threads", type=int, default=500)
+    mysql_subparser.add_argument("-udf", dest="udf", action="store_true", help="MySQL UDF提权（需 root 密码，-p 直接传密码值）")
 
     # Redis
     redis_subparser = subprocess.add_parser("redis", parents=[parent_parser], help="Redis弱口令检测")
@@ -201,11 +203,20 @@ def main():
             scan_run(hosts, args.threads, args.password, args.username, args.top)
             console.print("[header]✓ 一键扫描完成[/header]")
         elif args.subparser_name == "mysql":
-            hosts = iter_segments(args.host)
-            if args.username_file:
-                scan_mysql_run_file(hosts, args.username_file, args.password, args.port, args.threads)
+            if args.udf:
+                # UDF 提权模式：-p 直接传密码值（非密码本路径）
+                host = args.host.strip()
+                pwd = args.password
+                if pwd == str(DIR_PATH):
+                    console.print("[fail]✗ UDF 模式需提供密码（-p <password>）[/fail]")
+                else:
+                    udf_escalate(host, args.port, pwd)
             else:
-                scan_mysql_run(hosts, args.username, args.password, args.port, args.threads)
+                hosts = iter_segments(args.host)
+                if args.username_file:
+                    scan_mysql_run_file(hosts, args.username_file, args.password, args.port, args.threads)
+                else:
+                    scan_mysql_run(hosts, args.username, args.password, args.port, args.threads)
             console.print("[header]✓ 漏扫完毕[/header]")
         elif args.subparser_name == "redis":
             hosts = iter_segments(args.host)
